@@ -1,0 +1,21 @@
+#!/bin/bash
+#SBATCH -p cpu
+#SBATCH -J job_ab6
+#SBATCH -n 16
+#SBATCH --mail-user=1042845849@qq.com
+#SBATCH -t 08:00:00
+
+export PETSC_DIR=/home/yangchao/zl/petsc-3.6.4
+export PETSC_ARCH=linux-gnu-c-debug
+
+
+mpiexec -np 16 ./fi -preload 0 -n1 220 -n2 60 \
+-tsize 0.1 -tfinal 0.3 -tsmax 10000 -tsstart 0 \
+-snes_converged_reason \
+-snes_type newtonls -snes_linesearch_type bt -snes_linesearch_minlambda 1.e-4  -snes_linesearch_max_it  100 -snes_linesearch_alpha 1.e-4   -snes_linesearch_order 3  -snes_linesearch_damping 1.0 \
+-snes_atol 1.e-10 -snes_rtol 1.e-6  -snes_stol 1.e-1000 	 \
+-ksp_type gmres     -ksp_atol 1.e-10 -ksp_rtol 1.e-6 \
+-ksp_gmres_restart 30 -ksp_pc_side right -pc_type asm \
+-pc_asm_type restrict -pc_asm_overlap 1 \
+-sub_ksp_type preonly -sub_pc_type lu \
+-snes_monitor \

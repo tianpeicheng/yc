@@ -1,0 +1,10 @@
+% example, step, t, reason, fnorm, its_snes, its_ksp, its_fail, time
+1	, 1	, 0.01	, 2	, 0.795047	, 7	, 7	, 0	, 3.97582
+% example, step, t, reason, fnorm, its_snes, its_ksp, its_fail, time
+1	, 1	, 0.01	, 2	, 0.795047	, 31	, 31	, 0	, 3.98186
+% example, step, t, reason, fnorm, its_snes, its_ksp, its_fail, time
+1	, 1	, 0.01	, 2	, 0.795047	, 31	, 31	, 0	, 3.90094
+% example, step, t, reason, fnorm, its_snes, its_ksp, its_fail, time
+1	, 1	, 0.01	, 2	, 0.795047	, 31	, 31	, 0	, 3.91328
+% example, step, t, reason, fnorm, its_snes, its_ksp, its_fail, time
+1	, 1	, 0.01	, 2	, 0.795047	, 31	, 31	, 0	, 205.644
