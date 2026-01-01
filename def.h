@@ -2,7 +2,7 @@
 
 #define My_headfile
 #include <map>
-#include <unisolver/AutoDiff/AutoDiffTermForward.hpp>
+#include <autodiff/forward/dual.hpp>
 #include <vector>
 
 #define Smax   1.5
@@ -181,6 +181,7 @@ extern PetscErrorCode MY_ApplyFunction(PhysicalField **x, PhysicalField **f, Per
 extern PetscErrorCode FormInitialValue(void* );
 //extern PetscErrorCode FormFunction(DMDALocalInfo* ,PetscScalar** ,PetscScalar** ,void*);
 extern PetscErrorCode FormFunction(SNES,Vec ,Vec ,void*);
+extern PetscErrorCode FormJacobian(SNES,Vec,Mat,Mat,void*);
 extern PetscErrorCode Update(void* );
 extern PetscErrorCode FormResidual( SNES, Vec, Vec, void* );
 extern PetscErrorCode ComputeParameter(Vec , Vec , void* );
@@ -226,4 +227,3 @@ void PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties_subsp
 EXTERN_C_END
 
 #endif
-

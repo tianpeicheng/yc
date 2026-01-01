@@ -23,6 +23,7 @@ int main(int argc,char **argv)
 	//DM             da;
 	ParaCtx        param;
 	TstepCtx       tsctx;
+	Mat            J;
 //      EventCtx       event; 
 
 	PetscInitialize(&argc,&argv,(char *)0,help);
@@ -142,6 +143,8 @@ int main(int argc,char **argv)
 	ierr = DMDAGetArray(user->da,PETSC_TRUE,(void**)&(user->global_sol));CHKERRQ(ierr);
 
 	ierr = SNESSetFunction(snes,NULL,FormFunction,(void*)user);
+	ierr = DMCreateMatrix(user->da, &J); CHKERRQ(ierr);
+	ierr = SNESSetJacobian(snes, J, J, FormJacobian, (void*)user); CHKERRQ(ierr);
 
 	ierr = FormInitialValue(user); CHKERRQ(ierr);
 	ierr = FormInitialValue_Perm(user); CHKERRQ(ierr);
@@ -193,6 +196,7 @@ int main(int argc,char **argv)
 	ierr = DMDestroy(&user->da_reaction);CHKERRQ(ierr);
 	ierr = DMDestroy(&user->da_perm);CHKERRQ(ierr);
 	ierr = SNESDestroy(&snes);CHKERRQ(ierr);
+	ierr = MatDestroy(&J);CHKERRQ(ierr);
 	ierr = PetscFree(user); CHKERRQ(ierr);
 
 
@@ -560,7 +564,6 @@ ierr = DMDAVecRestoreArray(da_reaction,user->_sec_conc_old,&_sec_conc_old); CHKE
 
 	PetscFunctionReturn(0);
 }
-
 
 
 
