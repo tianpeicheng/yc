@@ -29,7 +29,7 @@
 // slightly compressible fluid: example 1-4.
 #if EXAMPLE== 1   // A Homogeneous Isotropic Porous Medium
 #define L1          (1)
-#define L2	        (1)
+#define L2	        (0.25)
 #define _bulk_modulus (2.0e9)
 #define _thermal_expansion (2.14e-4)
 #define reference_temperature (298.15)
@@ -161,7 +161,7 @@ typedef struct {
     Vec	          Q0,sol,sub_sol;
 	SNES          snes,sub_snes;
     Vec           _mass_frac,_mass_frac_old,_sec_conc_pre;
-    Vec           _sec_conc_old,_sec_conc,initial_ref,mineral_conc_old,_reaction_rate,_mineral_sat;
+    Vec           _sec_conc_old,_sec_conc,initial_ref,_reaction_rate,_mineral_sat;
 	PhysicalField **M,**flag,**global_sol;
 	PetscInt      sub_type;
 ;	
@@ -190,11 +190,10 @@ extern PetscErrorCode  PorousFlowAqueousPreDisChemistry( Vec X, bool _equilibriu
 PetscScalar  stoichiometry_primary(PetscInt reaction_num, PetscInt primary_num);
 extern PetscScalar rateConstantQp(int reaction_num, PetscScalar temp) ;
 extern void computeQpProperties(PetscInt _num_reactions, PermField **phi_old,PhysicalField **x, PhysicalField **_sec_conc_old,PhysicalField **_sec_conc,PhysicalField **_reaction_rate, void *ptr);
-void PorousFlowPorosity_atNegInfinityQp( bool _chemical, double *phi, ReactionField *_reaction_rate,ReactionField *mineral_conc_old,ReactionField *initial_ref,PetscScalar phi_old, PetscScalar Saturation,  void *ptr );
 extern PetscErrorCode updataprosity(void* ptr,Vec _sec_conc_old,Vec _sec_conc,Vec _mass_frac_old1,Vec _mass_frac_1);
 extern PetscErrorCode computeQpSecondaryConcentrations(bool  _equilibrium_constants_as_log10,PetscInt _num_reactions, PetscInt _num_primary,PhysicalField **x, Vec _sec_conc, PetscScalar *reactions,void *ptr);
 extern PetscErrorCode computeQpProperties_Chemical(PetscInt _num_reactions, PetscInt _num_primary, PhysicalField **x, void *ptr);
-PetscErrorCode  PorousFlowAqueousPreDisChemistry_computeQpReactionRates(double temp, double Saturation, PetscScalar phi_old,PetscScalar *phi, ReactionField *_mineral_sat, ReactionField *_reaction_rate, ReactionField *_sec_conc_old, ReactionField *_sec_conc, bool _equilibrium_constants_as_log10,void *ptr,ReactionField *mineral_conc_old,ReactionField *initial_ref);
+PetscErrorCode  PorousFlowAqueousPreDisChemistry_computeQpReactionRates(double temp, double Saturation, PetscScalar phi_old,PetscScalar *phi, ReactionField *_mineral_sat, ReactionField *_reaction_rate, ReactionField *_sec_conc_old, ReactionField *_sec_conc, bool _equilibrium_constants_as_log10,void *ptr,ReactionField *initial_ref);
 void PorousFlowAqueousPreDisMineral_computeQpProperties(double _saturation,ReactionField *_sec_conc_old, ReactionField *_sec_conc, ReactionField *_reaction_rate, PetscScalar _porosity_old,void *ptr);
 PetscScalar rateConstantQp(int reaction_num, PetscScalar temp) ;
 PetscScalar  stoichiometry_Secondary(PetscInt reaction_num, PetscInt primary_num);
@@ -210,11 +209,9 @@ extern PetscErrorCode  PorousFlowAqueousPreDisChemistry_subspace( Vec X, bool _e
 PetscScalar  stoichiometry_subspace(PetscInt reaction_num, PetscInt primary_num);
 extern PetscScalar rateConstantQp_subspace(int reaction_num, PetscScalar temp) ;
 extern void computeQpProperties_subspace(PetscInt _num_reactions, PermField **phi_old,PhysicalField **x, PhysicalField **_sec_conc_old,PhysicalField **_sec_conc,PhysicalField **_reaction_rate, void *ptr);
-void PorousFlowPorosity_atNegInfinityQp_subspace( bool _chemical, double *phi, ReactionField *_reaction_rate,ReactionField *mineral_conc_old,ReactionField *initial_ref,PetscScalar phi_old, PetscScalar Saturation,  void *ptr );
 extern PetscErrorCode updataprosit_subspace(void* ptr,Vec _sec_conc_old,Vec _sec_conc,Vec _mass_frac_old1,Vec _mass_frac_1);
 extern PetscErrorCode computeQpSecondaryConcentrations_subspace(bool  _equilibrium_constants_as_log10,PetscInt _num_reactions, PetscInt _num_primary,PhysicalField **x, Vec _sec_conc, PetscScalar *reactions,void *ptr);
 extern PetscErrorCode computeQpProperties_Chemical_subspace(PetscInt _num_reactions, PetscInt _num_primary, PhysicalField **x, void *ptr);
-PetscErrorCode  PorousFlowAqueousPreDisChemistry_computeQpReactionRates_subspace(double temp, double Saturation, PetscScalar phi_old,PetscScalar *phi, ReactionField *_mineral_sat, ReactionField *_reaction_rate, ReactionField *_sec_conc_old, ReactionField *_sec_conc, bool _equilibrium_constants_as_log10,void *ptr,ReactionField *mineral_conc_old,ReactionField *initial_ref);
 void PorousFlowAqueousPreDisMineral_computeQpProperties_subspace(double _saturation,ReactionField *_sec_conc_old, ReactionField *_sec_conc, ReactionField *_reaction_rate, PetscScalar _porosity_old,void *ptr);
 PetscScalar rateConstantQp_subspace(int reaction_num, PetscScalar temp) ;
 PetscScalar  stoichiometry_Secondary_subspace(PetscInt reaction_num, PetscInt primary_num);
@@ -224,6 +221,9 @@ void InitializeArray_subspace(PetscScalar *array, PetscInt size);
 void PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpSecondaryConcentrations_subspace(ReactionField *_sec_conc, ReactionField *_equilibrium_constants, PhysicalField *x,bool _equilibrium_constants_as_log10);
 void PorousFlowMassFractionAqueousEquilibriumChemistry_initQpSecondaryConcentrations_subspace(ReactionField *_sec_conc);
 void PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties_subspace(ReactionField *_sec_conc, ReactionField *_equilibrium_constants,ReactionField *_mass_frac, PhysicalField *x, bool _equilibrium_constants_as_log10,void *ptr);
+PetscErrorCode DataSaveVTK(Vec x, char *filename);
+PetscErrorCode Updata_Reaction(void* ptr);
+
 EXTERN_C_END
 
 #endif

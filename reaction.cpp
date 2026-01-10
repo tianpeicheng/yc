@@ -24,7 +24,7 @@ double    _mineral_density[DOF_reaction]={2875.0, 2875.0, 2875.0, 2875.0, 2875.0
 
 
 bool           isRestarting=false;
-PetscErrorCode  PorousFlowAqueousPreDisChemistry_computeQpReactionRates(double temp, double Saturation, PetscScalar phi_old,PetscScalar *phi, ReactionField *_mineral_sat, ReactionField *_reaction_rate, ReactionField *_sec_conc_old, ReactionField *_sec_conc, bool _equilibrium_constants_as_log10,void *ptr,ReactionField *mineral_conc_old,ReactionField *initial_ref){
+PetscErrorCode  PorousFlowAqueousPreDisChemistry_computeQpReactionRates(double temp, double Saturation, PetscScalar phi_old,PetscScalar *phi, ReactionField *_mineral_sat, ReactionField *_reaction_rate, ReactionField *_sec_conc_old, ReactionField *_sec_conc, bool _equilibrium_constants_as_log10,void *ptr,ReactionField *initial_ref){
 	UserCtx        *user = (UserCtx*) ptr ;
 	TstepCtx       *tsctx   = user->tsctx;
 	bool          _bounded_rate[DOF_reaction];

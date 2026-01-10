@@ -48,6 +48,25 @@ PetscErrorCode DataSaveBin(Vec x, char *filename)
 }
 
 
+#if 1
+#undef __FUNCT__
+#define __FUNCT__ "DataSaveVTK"
+PetscErrorCode DataSaveVTK(Vec x, char *filename)
+{
+        PetscErrorCode ierr;
+	PetscViewer    viewer;
+
+	PetscFunctionBegin;
+
+	ierr = PetscViewerVTKOpen(comm,filename,FILE_MODE_WRITE,&viewer); CHKERRQ(ierr);
+	ierr = VecView(x,viewer); CHKERRQ(ierr);
+	ierr = PetscViewerDestroy(&viewer); CHKERRQ(ierr);
+
+	PetscFunctionReturn(0);
+}
+#endif
+
+
 /*******************************************************************************************
 * YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY
 * CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC

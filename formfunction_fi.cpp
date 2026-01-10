@@ -94,15 +94,13 @@ static inline T DensityFromPw(const T &pw)
 template <typename T>
 static inline T UpwindMax(const T &a, const T &b)
 {
-	const T diff = a - b;
-	return static_cast<T>(0.5) * (a + b + sqrt(diff * diff + static_cast<T>(1e-12)));
+	return (a >= b) ? a : b;
 }
 
 template <typename T>
 static inline T UpwindMin(const T &a, const T &b)
 {
-	const T diff = a - b;
-	return static_cast<T>(0.5) * (a + b - sqrt(diff * diff + static_cast<T>(1e-12)));
+	return (a <= b) ? a : b;
 }
 
 template <typename T>
@@ -216,7 +214,7 @@ PetscErrorCode FormFunction(SNES snes, Vec X, Vec F, void *ptr)
 	PhysicalField **x, **f, **xold;
 	PermField **perm, **phi, **phi_old;
 	ReactionField **initial_ref, **_equilibrium_constants;
-	ReactionField **_sec_conc_old, **mineral_conc_old, **_mass_frac_old;
+	ReactionField **_sec_conc_old, **_mass_frac_old;
 
 	PetscFunctionBeginUser;
 	mx = user->n1;
@@ -253,8 +251,6 @@ PetscErrorCode FormFunction(SNES snes, Vec X, Vec F, void *ptr)
 	ierr = DMDAVecGetArray(da_reaction, user->eqm_k, &_equilibrium_constants);
 	CHKERRQ(ierr);
 	ierr = DMDAVecGetArray(da_reaction, user->initial_ref, &initial_ref);
-	CHKERRQ(ierr);
-	ierr = DMDAVecGetArray(da_reaction, user->mineral_conc_old, &mineral_conc_old);
 	CHKERRQ(ierr);
 	ierr = DMDAVecGetArray(da_reaction, user->_mass_frac_old, &_mass_frac_old);
 	CHKERRQ(ierr);
@@ -313,16 +309,16 @@ PetscErrorCode FormFunction(SNES snes, Vec X, Vec F, void *ptr)
 			ReactionField _reaction_rate_left, _reaction_rate_right, _reaction_rate_bottom, _reaction_rate_top, _reaction_rate;
 			ReactionField _sec_conc_left, _sec_conc_right, _sec_conc_bottom, _sec_conc_top, _sec_conc;
 			PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(&_sec_conc_left, &_equilibrium_constants[j][i], &_mass_frac_left, &x_left, _equilibrium_constants_as_log10, user);
-			PorousFlowAqueousPreDisChemistry_computeQpReactionRates(reference_temperature_pre, reference_saturation, phi_old[j][i-1].xx[0], &phi[j][i].xx[0], &_mineral_sat_left, &_reaction_rate_left, &_sec_conc_old[j][i - 1], &_sec_conc_left, _equilibrium_constants_as_log10, user, &mineral_conc_old[j][i - 1], &initial_ref[j][i - 1]);
+			PorousFlowAqueousPreDisChemistry_computeQpReactionRates(reference_temperature_pre, reference_saturation, phi_old[j][i-1].xx[0], &phi[j][i].xx[0], &_mineral_sat_left, &_reaction_rate_left, &_sec_conc_old[j][i - 1], &_sec_conc_left, _equilibrium_constants_as_log10, user,  &initial_ref[j][i - 1]);
 			PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(&_sec_conc_right, &_equilibrium_constants[j][i], &_mass_frac_right, &x_right, _equilibrium_constants_as_log10, user);
-			PorousFlowAqueousPreDisChemistry_computeQpReactionRates(reference_temperature_pre, reference_saturation, phi_old[j][i+1].xx[0], &phi[j][i].xx[0], &_mineral_sat_right, &_reaction_rate_right, &_sec_conc_old[j][i + 1], &_sec_conc_right, _equilibrium_constants_as_log10, user, &mineral_conc_old[j][i + 1], &initial_ref[j][i + 1]);
+			PorousFlowAqueousPreDisChemistry_computeQpReactionRates(reference_temperature_pre, reference_saturation, phi_old[j][i+1].xx[0], &phi[j][i].xx[0], &_mineral_sat_right, &_reaction_rate_right, &_sec_conc_old[j][i + 1], &_sec_conc_right, _equilibrium_constants_as_log10, user, &initial_ref[j][i + 1]);
 			PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(&_sec_conc, &_equilibrium_constants[j][i], &_mass_frac, &x_center, _equilibrium_constants_as_log10, user);
-			PorousFlowAqueousPreDisChemistry_computeQpReactionRates(reference_temperature_pre, reference_saturation, phi_old[j][i].xx[0], &phi[j][i].xx[0], &_mineral_sat, &_reaction_rate, &_sec_conc_old[j][i], &_sec_conc, _equilibrium_constants_as_log10, user, &mineral_conc_old[j][i], &initial_ref[j][i]);
+			PorousFlowAqueousPreDisChemistry_computeQpReactionRates(reference_temperature_pre, reference_saturation, phi_old[j][i].xx[0], &phi[j][i].xx[0], &_mineral_sat, &_reaction_rate, &_sec_conc_old[j][i], &_sec_conc, _equilibrium_constants_as_log10, user,  &initial_ref[j][i]);
 			PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(&_sec_conc_bottom, &_equilibrium_constants[j][i], &_mass_frac_bottom, &x_bottom, _equilibrium_constants_as_log10, user);
-			PorousFlowAqueousPreDisChemistry_computeQpReactionRates(reference_temperature_pre, reference_saturation, phi_old[j - 1][i].xx[0], &phi[j - 1][i].xx[0], &_mineral_sat_bottom, &_reaction_rate_bottom, &_sec_conc_old[j - 1][i], &_sec_conc_bottom, _equilibrium_constants_as_log10, user, &mineral_conc_old[j - 1][i], &initial_ref[j - 1][i]);
+			PorousFlowAqueousPreDisChemistry_computeQpReactionRates(reference_temperature_pre, reference_saturation, phi_old[j - 1][i].xx[0], &phi[j - 1][i].xx[0], &_mineral_sat_bottom, &_reaction_rate_bottom, &_sec_conc_old[j - 1][i], &_sec_conc_bottom, _equilibrium_constants_as_log10, user,  &initial_ref[j - 1][i]);
 			PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(&_sec_conc_top, &_equilibrium_constants[j][i], &_mass_frac_top, &x_top, _equilibrium_constants_as_log10, user);
-			PorousFlowAqueousPreDisChemistry_computeQpReactionRates(reference_temperature_pre, reference_saturation, phi_old[j + 1][i].xx[0], &phi[j + 1][i].xx[0], &_mineral_sat_top, &_reaction_rate_top, &_sec_conc_old[j + 1][i], &_sec_conc_top, _equilibrium_constants_as_log10, user, &mineral_conc_old[j + 1][i], &initial_ref[j + 1][i]);
-			// PorousFlowAqueousPreDisMineral_computeQpProperties(reference_saturation,&_sec_conc_old, &_sec_conc, &_reaction_rate,  phi_old[j][i].xx[0],user);
+			PorousFlowAqueousPreDisChemistry_computeQpReactionRates(reference_temperature_pre, reference_saturation, phi_old[j + 1][i].xx[0], &phi[j + 1][i].xx[0], &_mineral_sat_top, &_reaction_rate_top, &_sec_conc_old[j + 1][i], &_sec_conc_top, _equilibrium_constants_as_log10, user,  &initial_ref[j + 1][i]);
+
 
 			diff = 0.5 * (dx / (K_xx(i - 1, j)) + dx / (K_xx(i, j)));
 			U_L = -((x_center.pw - x_left.pw)) / diff;
@@ -361,8 +357,6 @@ PetscErrorCode FormFunction(SNES snes, Vec X, Vec F, void *ptr)
 
 
 	ierr = DMDAVecRestoreArray(da_reaction, user->_sec_conc_old, &_sec_conc_old);
-	CHKERRQ(ierr);
-	ierr = DMDAVecRestoreArray(da_reaction, user->mineral_conc_old, &mineral_conc_old);
 	CHKERRQ(ierr);
 	ierr = DMDAVecRestoreArray(da_reaction, user->_mass_frac_old, &_mass_frac_old);
 	CHKERRQ(ierr);
@@ -404,7 +398,7 @@ PetscErrorCode FormJacobian(SNES snes, Vec X, Mat J, Mat P, void *ptr)
 	PhysicalField **x, **xold;
 	PermField **perm, **phi, **phi_old;
 	ReactionField **initial_ref, **_equilibrium_constants;
-	ReactionField **_sec_conc_old, **mineral_conc_old, **_mass_frac_old;
+	ReactionField **_sec_conc_old, **_mass_frac_old;
 
 	PetscFunctionBeginUser;
 	mx = user->n1;
@@ -439,8 +433,6 @@ PetscErrorCode FormJacobian(SNES snes, Vec X, Mat J, Mat P, void *ptr)
 	ierr = DMDAVecGetArray(da_reaction, user->eqm_k, &_equilibrium_constants);
 	CHKERRQ(ierr);
 	ierr = DMDAVecGetArray(da_reaction, user->initial_ref, &initial_ref);
-	CHKERRQ(ierr);
-	ierr = DMDAVecGetArray(da_reaction, user->mineral_conc_old, &mineral_conc_old);
 	CHKERRQ(ierr);
 	ierr = DMDAVecGetArray(da_reaction, user->_mass_frac_old, &_mass_frac_old);
 	CHKERRQ(ierr);
@@ -543,7 +535,7 @@ PetscErrorCode FormJacobian(SNES snes, Vec X, Mat J, Mat P, void *ptr)
 			PorousFlowAqueousPreDisChemistry_computeQpReactionRates(
 				reference_temperature_pre, reference_saturation, phi_old[j][i].xx[0], &phi[j][i].xx[0],
 				&mineral_sat_center, &reaction_rate_center, &_sec_conc_old[j][i], &sec_conc_center,
-				_equilibrium_constants_as_log10, user, &mineral_conc_old[j][i], &initial_ref[j][i]);
+				_equilibrium_constants_as_log10, user,  &initial_ref[j][i]);
 
 			const PetscScalar rho_old_center = rho_old(i, j);
 			const PetscScalar Kxx_left = K_xx(i - 1, j);
@@ -684,8 +676,6 @@ PetscErrorCode FormJacobian(SNES snes, Vec X, Mat J, Mat P, void *ptr)
 	}
 
 	ierr = DMDAVecRestoreArray(da_reaction, user->_sec_conc_old, &_sec_conc_old);
-	CHKERRQ(ierr);
-	ierr = DMDAVecRestoreArray(da_reaction, user->mineral_conc_old, &mineral_conc_old);
 	CHKERRQ(ierr);
 	ierr = DMDAVecRestoreArray(da_reaction, user->_mass_frac_old, &_mass_frac_old);
 	CHKERRQ(ierr);

@@ -5,6 +5,7 @@ static char help[] = "3D single-phase flow, by LiRui .\n\\n";
 #include <petscdm.h>
 #include "def.h"
 #include "stdlib.h"
+#include "reaction.h"	
 #include "petscsys.h" 
 #include "petsctime.h"
 
@@ -122,7 +123,6 @@ int main(int argc,char **argv)
 
 
 	ierr = DMGetLocalVector(user->da_reaction, &(user->initial_ref)); CHKERRQ(ierr);
-	ierr = DMGetLocalVector(user->da_reaction, &(user->mineral_conc_old)); CHKERRQ(ierr);
 	ierr = DMGetLocalVector(user->da_reaction, &(user->_sec_conc_old));CHKERRQ(ierr);
 	ierr = DMGetLocalVector(user->da_reaction, &(user->_sec_conc));CHKERRQ(ierr);	
 	ierr = DMGetLocalVector(user->da_reaction, &(user->_reaction_rate));CHKERRQ(ierr);	
@@ -182,7 +182,6 @@ int main(int argc,char **argv)
 	ierr = DMDARestoreArray(user->da,PETSC_TRUE,(void**)&(user->global_sol));CHKERRQ(ierr);
 	ierr = DMRestoreLocalVector(user->da_reaction, &user->kinetic_k); CHKERRQ(ierr);
 	ierr = DMRestoreLocalVector(user->da_reaction, &(user->initial_ref)); CHKERRQ(ierr);
-	ierr = DMRestoreLocalVector(user->da_reaction, &(user->mineral_conc_old)); CHKERRQ(ierr);
 	ierr = DMRestoreLocalVector(user->da_reaction, &(user->_sec_conc_old));CHKERRQ(ierr);
 	ierr = DMRestoreLocalVector(user->da_reaction, &(user->_sec_conc));CHKERRQ(ierr);	
 	ierr = DMRestoreLocalVector(user->da_reaction, &(user->_reaction_rate));CHKERRQ(ierr);	
@@ -290,7 +289,6 @@ PetscErrorCode Update(void *ptr)
 			if (( tsctx->tcurr < tsctx->tfinal - EPS )&&( tsctx->tcurr + tsctx->tsize >= tsctx->tfinal + EPS )) {
 			tsctx->tsize = tsctx->tfinal - tsctx->tcurr;
 						}
-	//	if(tsctx->tsize > tsctx->tmax) tsctx->tsize = tsctx->tmax ;
 			}
 	ierr = PetscPrintf(comm, " current initial residual = %g with adpt method, current time size = %g\n", res, tsctx->tsize);
 	}else{
@@ -302,74 +300,14 @@ PetscErrorCode Update(void *ptr)
 	                  tsctx->tscurr, tsctx->tcurr ); CHKERRQ(ierr);}
 	ierr = PetscTime(&time0); CHKERRQ(ierr);
 	ierr = SNESSolve(snes,0,user->sol);
-
-	 while(0){
-	  /*  Global update begin */
-	 ierr = PetscPrintf(PETSC_COMM_WORLD,"Global update begin\n");CHKERRQ(ierr);	
-	 max_it = param->hj_max_nit; 
-        if( (hj_fnorm <= param->local_stop_atol) && (localsnes>=10) ) {
-	       max_it = 300; 
-	    }
-        ierr = SNESSetTolerances(user->snes, 
-              PETSC_DEFAULT,   
-              PETSC_DEFAULT,    
-              PETSC_DEFAULT, //stol  - convergence tolerance in terms of the norm of the change in the solution between steps, default: ,1E-08
-              max_it, //maxit  - maximum number of iterations, default: 50
-              PETSC_DEFAULT);//maxf  - maximum number of function evaluations, default: 10000
-         CHKERRQ(ierr);
-
-	ierr = SNESSetFunction(user->snes,NULL,FormFunction,user);
-	//ierr = PetscLogEventBegin(global_snes_solve,snes,0,0,0);CHKERRQ(ierr);
-        ierr = SNESSolve(user->snes,0,user->sol);
-
-	//ierr = PetscLogEventEnd(global_snes_solve,snes,0,0,0);CHKERRQ(ierr);
-	ierr = SNESGetIterationNumber(user->snes,&its);CHKERRQ(ierr);
-        globalsnes = globalsnes + its;
-
-        ierr = SNESGetLinearSolveIterations(user->snes,&lits);CHKERRQ(ierr);
-        globalksp = globalksp + lits ;
-	    ierr = PetscPrintf(PETSC_COMM_WORLD,"Global update end, Netwon iteration=%d,GMRES iteration=%d\n",globalsnes,globalksp);CHKERRQ(ierr);	
-	    SNESLineSearch linesearch;
-        SNESGetLineSearch(user->snes,&linesearch);
-        SNESLineSearchGetNorms(linesearch,NULL,&hj_fnorm,NULL);
-	    param->hj_fnorm = hj_fnorm;
-        if(hj_fnorm < param->global_nonlinear_atol ) break ;
-        user->sub_type = 0;  
-      //set i<2 means using two different NE corrections,i<1 means using a NE correction.
-        for (i=0;i<NE_TYPE;i++) {		    		
-	ierr = PetscPrintf(PETSC_COMM_WORLD, "    Subspace correction begin: type=%d\n",user->sub_type);CHKERRQ(ierr);
-	if(user->sub_type == 0){
-	ierr = VecCopy(user->sol,user->sub_sol); CHKERRQ(ierr);
-	}
-	ierr = DetermineNewPartition(user);CHKERRQ(ierr);    /* Determine the new partition */ 
-	ierr = SNESSetFunction(user->sub_snes,NULL,FormFunction_subspace,user);
-	ierr = DMDAVecGetArray(user->da,  user->sub_sol, &user->global_sol);CHKERRQ(ierr);
-	        ierr = SNESSetTolerances(user->sub_snes, 
-              1.e-1,   
-              1.e-6,    
-              PETSC_DEFAULT, //stol  - convergence tolerance in terms of the norm of the change in the solution between steps, default: ,1E-08
-              max_it, //maxit  - maximum number of iterations, default: 50
-              PETSC_DEFAULT);//maxf  - maximum number of function evaluations, default: 10000
-         CHKERRQ(ierr);
-	ierr = SNESSolve(user->sub_snes,0,user->sub_sol);
-
-	ierr = DMDAVecRestoreArray(user->da,user->sub_sol, &user->global_sol);CHKERRQ(ierr);//add by haijian
-	ierr = SNESGetIterationNumber(user->sub_snes,&its);CHKERRQ(ierr);        
-        localsnes = localsnes + its ;
-        ierr = SNESGetLinearSolveIterations(user->sub_snes,&lits);CHKERRQ(ierr); 
-	localksp = localksp + lits;
-        ierr = PetscPrintf(PETSC_COMM_WORLD,"    Subspace correction: type=%d, Netwon iteration=%d,GMRES iteration=%d\n",user->sub_type,localsnes,localksp);CHKERRQ(ierr);
-        user->sub_type = user->sub_type + 1;
-	}
-	ierr = VecCopy(user->sub_sol,user->sol); CHKERRQ(ierr);
-
-	}	
+	ierr = Updata_Reaction(user);
+	 
 	ierr = PetscTime(&time1); CHKERRQ(ierr);
     ierr = VecCopy(user->sol,user->Q0);
-    ierr = VecCopy(user->_sec_conc,user->_sec_conc_old);
-	ierr = VecCopy(user->_mass_frac,user->_mass_frac_old);
-   
-
+    sprintf( filename, "example=%dpermeability_xxascii_%d.vts",EXAMPLE,tsctx->tscurr);
+    ierr = DataSaveVTK(user->sol,filename);
+    sprintf( filename, "example=%dpermeability_xxascii_%d.data",EXAMPLE,tsctx->tscurr);
+    ierr = DataSaveASCII(user->sol,filename);
          PetscReal      litspit=0.0;
          PetscReal      its1=0.0;
          PetscReal      lits1=0.0;
@@ -412,18 +350,7 @@ PetscErrorCode Update(void *ptr)
 
 	ierr = PetscPrintf(comm, "\n+++++++++++++++++++++++ Summary +++++++++++++++++++++++++\n" ); CHKERRQ(ierr);
 	ierr = PetscPrintf(comm, " Final time = %g, Cost time = %g\n", tsctx->tcurr, totaltime ); CHKERRQ(ierr);
-# if 1	// For computing  Darcy velocity 
-	Vec  global_perm;
-        ierr = DMCreateGlobalVector(user->da_reaction,&global_perm);CHKERRQ(ierr);
-	ierr = DMLocalToGlobalBegin(user->da_reaction,user->_sec_conc, INSERT_VALUES,global_perm);CHKERRQ(ierr);
-	ierr = DMLocalToGlobalEnd(user->da_reaction,user->_sec_conc, INSERT_VALUES,global_perm);CHKERRQ(ierr);
- #if 1
-sprintf( filename, "example=%dpermeability_xxascii.data",EXAMPLE);
-ierr = DataSaveASCII(global_perm,filename);
- 
-  #endif 
 
-#endif
 
 	if (!param->PetscPreLoading) {
 		ierr = PetscFClose(comm, fp); CHKERRQ(ierr);
@@ -482,12 +409,19 @@ PetscErrorCode FormInitialValue(void* ptr)
 			y_loc = ((PetscScalar)j+0.5)*user->dy;
 		for ( i=xl; i < xl+nxl; i++) {
 			sol[j][i].pw = P_init;
-		   for (int nc = 0; nc < DOF_reaction; ++nc){
-		   if(y_loc<=2.5&&(i==0)){
+		   for (int nc = 0; nc < DOF_reaction-1; ++nc){
+		   if(y_loc<=0.25&&(i==0)){
 		   sol[j][i].cw[nc] = c_BC_L;
 		   }else{
 		   sol[j][i].cw[nc] = c_BC_R;
 		   }
+	double sum = 0.0;
+for (int nc = 0; nc < DOF_reaction - 1; ++nc){
+    sum += sol[j][i].cw[nc];
+}
+sol[j][i].cw[DOF_reaction - 1] = 1.0 - sum;
+
+		   
 				}
 		
 		}
@@ -539,31 +473,108 @@ ierr = VecCopy(user->_sec_conc,user->_sec_conc_old);
 }
 
 
-
 #undef __FUNCT__
-#define __FUNCT__ "FormOldValue_Reaction"
-PetscErrorCode FormOldValue_Reaction(void* ptr)
+#define __FUNCT__ "Updata_Reaction"
+PetscErrorCode Updata_Reaction(void* ptr)
 {
-	PetscErrorCode ierr;
-	UserCtx        *user = (UserCtx*) ptr;
-	DM             da=user->da,da_reaction = user->da_reaction;
-    ReactionField  **_sec_conc_old,**mineral_conc_old, **_mass_frac_old;
-	PetscInt       i, j, xg, yg, zg, nxg, nyg, nzg;
-	PetscFunctionBeginUser;
-
+    PetscErrorCode ierr;
+    UserCtx        *user = (UserCtx*) ptr;
+    DM             da=user->da,da_reaction = user->da_reaction,da_perm=user->da_perm;
+    ReactionField  **_sec_conc,**_sec_conc_old,**_equilibrium_constants, **_mass_frac;
+	ReactionField  **_mineral_sat,**_reaction_rate,**initial_ref,**mineral_conc;
+	PhysicalField **sol;
+	PermField     **phi,**phi_old;
+	PetscInt       i, j, nc,mx, my, xl, yl, zl, nxl, nyl, nzl, xg, yg, zg, nxg, nyg, nzg;
+	Vec 		  loc_X;
+    PetscFunctionBeginUser;
+		mx = user->n1; my = user->n2;
+	ierr = DMGetLocalVector(da, &loc_X);
+	CHKERRQ(ierr);
+	ierr = DMGlobalToLocalBegin(da, user->sol, INSERT_VALUES, loc_X);
+	CHKERRQ(ierr);
+	ierr = DMGlobalToLocalEnd(da, user->sol, INSERT_VALUES, loc_X);
+	CHKERRQ(ierr);
     ierr = DMDAGetGhostCorners( da, &xg, &yg, &zg, &nxg, &nyg, &nzg ); CHKERRQ(ierr);
-	ierr = DMDAVecGetArray(da_reaction,user->_sec_conc_old,&_sec_conc_old); CHKERRQ(ierr);
-	ierr = DMDAVecGetArray(da_reaction,user->_mass_frac_old,&_mass_frac_old); CHKERRQ(ierr);
-	ierr = DMDAVecGetArray(da_reaction,user->mineral_conc_old,&mineral_conc_old); CHKERRQ(ierr);
+		ierr = DMDAGetCorners( da, &xl, &yl, &zl, &nxl, &nyl, &nzl ); CHKERRQ(ierr);
+	ierr = DMDAVecGetArray(da,loc_X,&sol); CHKERRQ(ierr);
+    ierr = DMDAVecGetArray(da_reaction,user->_sec_conc,&_sec_conc); CHKERRQ(ierr);
+    ierr = DMDAVecGetArray(da_reaction,user->_sec_conc_old,&_sec_conc_old); CHKERRQ(ierr);
+    ierr = DMDAVecGetArray(da_reaction,user->_mass_frac_old,&_mass_frac); CHKERRQ(ierr);
+    ierr = DMDAVecGetArray(da_reaction,user->eqm_k,&_equilibrium_constants); CHKERRQ(ierr);
+	ierr = DMDAVecGetArray(da_reaction,user->_mineral_sat,&_mineral_sat);CHKERRQ(ierr);
+    ierr = DMDAVecGetArray(da_reaction,user->_reaction_rate,&_reaction_rate);CHKERRQ(ierr);
+    ierr = DMDAVecGetArray(da_reaction,user->initial_ref,&initial_ref); CHKERRQ(ierr);
+	ierr = DMDAVecGetArray(da_perm,user->phi,&phi ); CHKERRQ(ierr);
+	ierr = DMDAVecGetArray(da_perm,user->phi_old,&phi_old); CHKERRQ(ierr);
+	if (xl==0) {
+		for ( j=yg; j < yg+nyg; j++ ) {
+			for ( i=-WIDTH; i<0; i++ ) {
+
+             sol[j][i].pw =2*P_init-sol[j][-i-1].pw; 
+			 	for (nc = 0; nc < DOF_reaction; ++nc){
+             sol[j][i].cw[nc] =2*c_BC_L-sol[j][-i-1].cw[nc];
+				}	
+			}
+		}
+	}
+// right boundary (out flow): dirichlet boundary = P2
+	if ( xl+nxl==mx ) {
+		for (  j=yg; j < yg+nyg; j++ ) {
+			for ( i=mx; i<mx+WIDTH; i++ ) {
+               sol[j][i].pw =-sol[j][2*mx-i-1].pw;//
+			     for (nc = 0; nc < DOF_reaction; ++nc){
+               sol[j][mx].cw[nc] =2*c_BC_R-sol[j][2*mx-i-1].cw[nc];//
+			   			}
+			}
+		}
+	}
+// bottom boundary (no flow): v_y=0 Neumann boundary
+	if ( yl==0 ) {
+		for ( i=xg; i < xg+nxg; i++ ) {
+			for ( j=-WIDTH; j<0; j++ ) {
+              sol[j][i].pw =sol[-j-1][i].pw;//
+			  for (nc = 0; nc < DOF_reaction; ++nc){
+              sol[j][i].cw[nc] = sol[-j-1][i].cw[nc];
+			  }
+			}
+		}
+	}
+// top boundary (no flow): v_y=0 Neumann boundary
+	if ( yl+nyl==my ) {
+		for ( i=xg; i < xg+nxg; i++ ) {
+			for ( j=my; j<my+WIDTH; j++ ) {
+				sol[j][i].pw =sol[2*my-j-1][i].pw;//
+				for (nc = 0; nc < DOF_reaction; ++nc){
+               sol[j][i].cw[nc] =sol[2*my-j-1][i].cw[nc];//
+				}
+			}
+		}
+	}
+
+    for ( j=yg; j < yg+nyg; j++) {
+        for ( i=xg; i < xg+nxg; i++) {
+            
+    PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(&_sec_conc[j][i], &_equilibrium_constants[j][i], &_mass_frac[j][i], &sol[j][i], _equilibrium_constants_as_log10, user);
+	PorousFlowAqueousPreDisChemistry_computeQpReactionRates(reference_temperature_pre,reference_saturation, phi_old[j][i].xx[0], &phi[j][i].xx[0], &_mineral_sat[j][i],  &_reaction_rate[j][i],  &_sec_conc_old[j][i], &_sec_conc[j][i],_equilibrium_constants_as_log10,user,&initial_ref[j][i]);
+    PorousFlowAqueousPreDisMineral_computeQpProperties(reference_saturation,&_sec_conc_old[j][i], &_sec_conc[j][i], &_reaction_rate[j][i],  phi_old[j][i].xx[0],user);
+  
 
 
-
-ierr = DMDAVecRestoreArray(da_reaction,user->mineral_conc_old,&mineral_conc_old); CHKERRQ(ierr);
-ierr = DMDAVecRestoreArray(da_reaction,user->_mass_frac_old,&_mass_frac_old); CHKERRQ(ierr);
-ierr = DMDAVecRestoreArray(da_reaction,user->_sec_conc_old,&_sec_conc_old); CHKERRQ(ierr);
-
-	PetscFunctionReturn(0);
+        }
 }
+	ierr = DMDAVecRestoreArray(da_perm,user->phi,&phi ); CHKERRQ(ierr);
+	ierr = DMDAVecRestoreArray(da_perm,user->phi_old,&phi_old); CHKERRQ(ierr);
+	ierr = DMDAVecRestoreArray(da,loc_X,&sol); CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArray(da_reaction,user->_sec_conc,&_sec_conc); CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArray(da_reaction,user->_sec_conc_old,&_sec_conc_old); CHKERRQ(ierr);
+	ierr = DMDAVecRestoreArray(da_reaction,user->_mass_frac_old,&_mass_frac); CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArray(da_reaction,user->eqm_k,&_equilibrium_constants); CHKERRQ(ierr);
+	ierr = DMDAVecRestoreArray(da_reaction,user->_mineral_sat,&_mineral_sat);CHKERRQ(ierr);
+   ierr = DMDAVecRestoreArray(da_reaction,user->_reaction_rate,&_reaction_rate);CHKERRQ(ierr);
+   ierr = DMDAVecRestoreArray(da_reaction,user->initial_ref,&initial_ref); CHKERRQ(ierr);
+    PetscFunctionReturn(0);
+}
+
 
 
 
