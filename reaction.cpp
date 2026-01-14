@@ -8,7 +8,7 @@
 #include <float.h>  // 用于DBL_MAX
 #include <stdbool.h>
 #include <limits.h>
-
+//aspin
 PetscScalar  _primary_activity_coefficients[] = {1,1,1,1,1};
 PetscScalar  _secondary_activity_coefficients[] = {1,1,1,1,1};
 PetscScalar  _reactions_Secondary[]  = {1, 1, 0, 0, 0, -1, 1, 0,0, 0,0, 1, 1, 0, 0,0, 1, 0, 1, 0,0, 1, 0, 0, 1};
