@@ -1,4 +1,4 @@
-#include <float.h> 
+#include <float.h>
 #include <limits.h>
 #include <math.h>
 #include <petscdm.h>
@@ -6,12 +6,12 @@
 #include <petscsnes.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h> 
+#include <stdlib.h>
 #include "def.h"
 #include "petscsys.h"
 #include "reaction.h"
 #include <iostream>
-#if EXAMPLE == 1||EXAMPLE==3
+#if EXAMPLE == 1 || EXAMPLE == 3
 double qn[DOF_reaction] = {0, 0, 0, 0, 0};
 #elif EXAMPLE == 2
 double qn[DOF_reaction] = {0, 0, 0, 0};
@@ -36,7 +36,7 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
     xinte = info->xs + info->xm;
     yints = info->ys;
     yinte = info->ys + info->ym;
-#if EXAMPLE == 1||EXAMPLE==3
+#if EXAMPLE == 1 || EXAMPLE == 3
 #define conc_1(i, j) (1)
 #define diffusivity(i, j) (0)
 #elif EXAMPLE == 2
@@ -44,18 +44,19 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
 #define diffusivity(i, j) (1.e-7)
 #endif
 #define K1_xx(i, j) ((user->perm_field[j][i].xx[0]) / (mu))
-#define K1_yy(i, j) ((user->perm_field[j][i].xx[1]) / (mu))
+#define K1_yy(i, j) ((user->perm_field[j][i].xx[1]) / (mu)) //
 
     for (j = yints; j < yinte; j++)
     {
         for (i = xints; i < xinte; i++)
         {
+
             double x_loc = (i + 0.5) * dx;
             PhysicalField x_center = x[j][i];
             PhysicalField x_left, x_right, x_bottom, x_top;
             if (i == 0)
             {
-#if EXAMPLE == 1||EXAMPLE==3
+#if EXAMPLE == 1 || EXAMPLE == 3
                 x_left.pw = 2 * P_init - x_center.pw;
                 for (nc = 0; nc < DOF_reaction; ++nc)
                 {
@@ -84,7 +85,7 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
             }
             if (i == mx - 1)
             {
-#if EXAMPLE == 1||EXAMPLE==3
+#if EXAMPLE == 1 || EXAMPLE == 3
                 x_right.pw = -x_center.pw;
                 for (nc = 0; nc < DOF_reaction; ++nc)
                 {
@@ -126,7 +127,7 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
             {
                 x_top = x[j + 1][i];
             }
-             
+
             ReactionField _mass_frac_left, _mass_frac_right, _mass_frac_bottom,
                 _mass_frac_top, _mass_frac;
             SecondaryReactionField _sec_conc_left, _sec_conc_right, _sec_conc_bottom,
@@ -135,31 +136,29 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
                 &_sec_conc_left, &user->eqm_k_field[j][i],
                 &_mass_frac_left, &x_left, _equilibrium_constants_as_log10,
-                user,tsctx->tcurr);
+                user, tsctx->tcurr);
 
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
                 &_sec_conc_right, &user->eqm_k_field[j][i],
                 &_mass_frac_right, &x_right, _equilibrium_constants_as_log10,
-                user,tsctx->tcurr);
+                user, tsctx->tcurr);
 
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
                 &_sec_conc, &user->eqm_k_field[j][i], &_mass_frac,
-                &x_center, _equilibrium_constants_as_log10, user,tsctx->tcurr);
+                &x_center, _equilibrium_constants_as_log10, user, tsctx->tcurr);
 
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
                 &_sec_conc_bottom, &user->eqm_k_field[j][i],
                 &_mass_frac_bottom, &x_bottom, _equilibrium_constants_as_log10,
-                user,tsctx->tcurr);
+                user, tsctx->tcurr);
 
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
                 &_sec_conc_top, &user->eqm_k_field[j][i], &_mass_frac_top,
-                &x_top, _equilibrium_constants_as_log10, user,tsctx->tcurr);
-            
+                &x_top, _equilibrium_constants_as_log10, user, tsctx->tcurr);
 
-            ReactionField _mineral_sat, _reaction_rate ;
+            ReactionField _mineral_sat, _reaction_rate;
 
-
-#if EXAMPLE == 1||EXAMPLE==3
+#if EXAMPLE == 1 || EXAMPLE == 3
             PorousFlowAqueousPreDisChemistry_computeQpReactionRates(
                 reference_temperature_pre, reference_saturation,
                 user->phi_old_field[j][i].xx[0], &user->phi_field[j][i].xx[0], &_mineral_sat,
@@ -189,9 +188,11 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
 
             for (nc = 0; nc < DOF_reaction; ++nc)
             {
+
                 fluxL1 = _mass_frac_left.reaction[nc] * rho(i - 1, j) *
                              max(U_L, 0.0) +
                          _mass_frac.reaction[nc] * rho(i, j) * min(U_L, 0.0);
+
                 fluxL2 = diffusivity(i, j) * (_mass_frac.reaction[nc] - _mass_frac_left.reaction[nc]) / dx;
                 fluxR1 = _mass_frac_right.reaction[nc] * rho(i + 1, j) *
                              min(U_R, 0.0) +
@@ -205,41 +206,41 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
                              min(U_T, 0.0) +
                          _mass_frac.reaction[nc] * rho(i, j) * max(U_T, 0.0);
                 fluxT2 = diffusivity(i, j) * (_mass_frac_top.reaction[nc] - _mass_frac.reaction[nc]) / dy;
+
                 alpha[nc] =
                     (rho(i, j) * user->phi_field[j][i].xx[0] * _mass_frac.reaction[nc] -
-                     rho_old(i, j) * user->phi_old_field[j][i].xx[0] *
-                         user->_mass_frac_old_field[j][i].reaction[nc]) /
+                     user->phi_old_field[j][i].xx[0] * user->_mass_frac_old_field[j][i].reaction[nc] * rho_old(i, j)) /
                     tsctx->tsize;
-#if EXAMPLE==1||EXAMPLE==3
+              
+#if EXAMPLE == 1 || EXAMPLE == 3
                 for (int q = 0; q < (DOF - DOF_reaction); ++q)
                 {
                     qn[nc] = stoichiometry[nc] * _mineral_density[nc] *
                              _reaction_rate.reaction[q] * user->phi_field[j][i].xx[0];
-                
                 }
-#endif  
+#endif
 
-
-double scaling_1=1;
-#if EXAMPLE==2
-if(nc==2){
-    scaling_1=1.e+6;
-}
-#endif  
-     f[j][i].cw[nc] = scaling_1*(alpha[nc] + (fluxR1 - fluxL1) / dx +
-                                 (fluxT1 - fluxB1) / dy - ((fluxR2 - fluxL2) / dx + (fluxT2 - fluxB2) / dy) + qn[nc]);
-     
+                double scaling_1 = 1;
+#if EXAMPLE == 2
+                if (nc == 2)
+                {
+                    scaling_1 = 1.e+6;
+                }
+#endif
+                f[j][i].cw[nc] = scaling_1 * (alpha[nc] + (fluxR1 - fluxL1) / dx +
+                                              (fluxT1 - fluxB1) / dy - ((fluxR2 - fluxL2) / dx + (fluxT2 - fluxB2) / dy) + qn[nc]);
             }
+
 #if EXAMPLE == 1
             f[j][i].pw = (fluxR - fluxL) / dx + (fluxT - fluxB) / dy;
 #elif EXAMPLE == 2
             f[j][i].pw = x[j][i].pw - (60 - 50 * x_loc);
-#elif EXAMPLE==3
-            double alpha1=0;
-           alpha1 = (rho(i, j) * user->phi_field[j][i].xx[0] -
-                    rho_old(i, j) * user->phi_old_field[j][i].xx[0]) /
-                    tsctx->tsize;
-            f[j][i].pw = alpha1+(fluxR - fluxL) / dx + (fluxT - fluxB) / dy;
+#elif EXAMPLE == 3
+            double alpha1 = 0;
+            alpha1 = (rho(i, j) * user->phi_field[j][i].xx[0] -
+                      rho_old(i, j) * user->phi_old_field[j][i].xx[0]) /
+                     tsctx->tsize;
+            f[j][i].pw = alpha1 + (fluxR - fluxL) / dx + (fluxT - fluxB) / dy;
 #endif
         }
     }

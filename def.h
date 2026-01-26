@@ -12,6 +12,7 @@
 #define MATFD 0
 #define NE_TYPE 1
 #define WIDTH 1
+#define WIDTH_perm 2
 #if EXAMPLE == 1||EXAMPLE == 3
 #define DOF 6
 #define DOF_reaction 5

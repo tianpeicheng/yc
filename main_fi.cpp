@@ -126,24 +126,34 @@ int main(int argc, char **argv)
     CHKERRQ(ierr);
     ierr = DMDACreate2d(comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED,
                         DMDA_STENCIL_STAR, n1, n2, PETSC_DECIDE, PETSC_DECIDE,
-                        DOF_reaction, WIDTH, 0, 0, &(user->da_reaction));
+                        DOF_reaction, WIDTH_perm, 0, 0, &(user->da_reaction));
     CHKERRQ(ierr);
     ierr = DMDACreate2d(comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED,
                         DMDA_STENCIL_STAR, n1, n2, PETSC_DECIDE, PETSC_DECIDE,
-                        DOF_perm, WIDTH, 0, 0, &(user->da_perm));
+                        DOF_perm, WIDTH_perm, 0, 0, &(user->da_perm));
     CHKERRQ(ierr);
     ierr = DMDACreate2d(comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED,
                         DMDA_STENCIL_STAR, n1, n2, PETSC_DECIDE, PETSC_DECIDE,
-                        DOF_Secondary, WIDTH, 0, 0, &(user->da_secondary));
+                        DOF_Secondary, WIDTH_perm, 0, 0, &(user->da_secondary));
     CHKERRQ(ierr);
     if (DOF_mineral != 0)
     {
         ierr = DMDACreate2d(comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED,
                             DMDA_STENCIL_STAR, n1, n2, PETSC_DECIDE, PETSC_DECIDE,
-                            DOF_mineral, WIDTH, 0, 0, &(user->da_mineral));
+                            DOF_mineral, WIDTH_perm, 0, 0, &(user->da_mineral));
         CHKERRQ(ierr);
     }
+    DMSetOptionsPrefix(user->da, "flow_");
+    DMSetOptionsPrefix(user->da_perm, "perm_");
+    DMSetOptionsPrefix(user->da_reaction, "reaction_");
+    DMSetOptionsPrefix(user->da_secondary, "secondary_");
     ierr = DMSetFromOptions(user->da);
+    CHKERRQ(ierr);
+    ierr = DMSetFromOptions(user->da_perm);
+    CHKERRQ(ierr);
+        ierr = DMSetFromOptions(user->da_reaction);
+    CHKERRQ(ierr);
+        ierr = DMSetFromOptions(user->da_secondary);
     CHKERRQ(ierr);
     ierr = DMSetUp(user->da);
     CHKERRQ(ierr);
@@ -220,7 +230,7 @@ int main(int argc, char **argv)
     ierr = DMDAGetArray(user->da_reaction, PETSC_TRUE,
                         (void **)&(user->initial_ref_field));
     CHKERRQ(ierr);
-    ierr = DMDAGetArray(user->da, PETSC_FALSE, (void **)&(user->xold));
+    ierr = DMDAGetArray(user->da, PETSC_TRUE, (void **)&(user->xold));
     CHKERRQ(ierr);
 #if EXAMPLE == 2
     ierr = DMDAGetArray(user->da_mineral, PETSC_TRUE, (void **)&(user->eqm_k_mineral_field));
@@ -596,7 +606,7 @@ PetscErrorCode FormInitialValue_Perm_local(void *ptr)
             perm_field_local[j][i].xx[1] = perm_field_local[j][i].xx[0];
             for (int nc = 0; nc < DOF_perm; nc++)
             {
-                user->perm_field[j][i].xx[nc] = 1e-10;//perm_field_local[j][i].xx[nc];
+                user->perm_field[j][i].xx[nc] =perm_field_local[j][i].xx[nc];
                 user->phi_field[j][i].xx[nc] = 0.2;
                 user->phi_old_field[j][i].xx[nc] = 0.2;
             }
@@ -622,8 +632,11 @@ PetscErrorCode FormInitialValue_local(void *ptr)
     DM da = user->da;
     PhysicalField **sol;
     PetscInt i, j, y_loc, x_loc, xl, yl, zl, nxl, nyl, nzl;
+    PetscInt  xg, yg, zg, nxg, nyg, nzg;
     PetscFunctionBeginUser;
     ierr = DMDAGetCorners(da, &xl, &yl, &zl, &nxl, &nyl, &nzl);
+    CHKERRQ(ierr);
+        ierr = DMDAGetGhostCorners(da, &xg, &yg, &zg, &nxg, &nyg, &nzg);
     CHKERRQ(ierr);
     ierr = DMDAVecGetArray(da, user->sol, &sol);
     CHKERRQ(ierr);
@@ -635,18 +648,18 @@ PetscErrorCode FormInitialValue_local(void *ptr)
             x_loc = ((PetscScalar)i + 0.5) * user->dx;
 #if EXAMPLE == 1 || EXAMPLE == 3
             sol[j][i].pw = P_init;
-            user->xold[j][i].pw = P_init;
+
             for (int nc = 0; nc < DOF_reaction; ++nc)
             {
                 if (y_loc <= 0.25 && (i == 0))
                 {
                     sol[j][i].cw[nc] = c_BC_L;
-                    user->xold[j][i].cw[nc] = c_BC_L;
+         
                 }
                 else
                 {
                     sol[j][i].cw[nc] = c_BC_R;
-                    user->xold[j][i].cw[nc] = c_BC_R;
+
                 }
             }
 
@@ -662,6 +675,26 @@ PetscErrorCode FormInitialValue_local(void *ptr)
             }
 
 #endif
+        }
+    }
+
+
+    for (j = yg; j < yg + nyg; j++)
+    {
+        y_loc = ((PetscScalar)j + 0.5) * user->dy;
+        for (i = xg; i < xg + nxg; i++)
+        {
+                user->xold[j][i].pw = P_init;
+                  for (int nc = 0; nc < DOF_reaction; ++nc)
+            {
+               if (y_loc <= 0.25 && (i == 0))
+                {
+                 user->xold[j][i].cw[nc] = c_BC_L;
+                }else{
+                    user->xold[j][i].cw[nc] = c_BC_R;
+                }
+
+            }
         }
     }
     ierr = DMDAVecRestoreArray(da, user->sol, &sol);
@@ -788,6 +821,7 @@ PetscErrorCode Updata_Reaction(void *ptr)
     CHKERRQ(ierr);
     ierr = DMDAVecGetArray(da, loc_X, &sol);
     CHKERRQ(ierr);
+
 #if EXAMPLE == 1 || EXAMPLE == 3
     if (xl == 0)
     {
@@ -824,7 +858,7 @@ PetscErrorCode Updata_Reaction(void *ptr)
         {
             for (j = -WIDTH; j < 0; j++)
             {
-                sol[j][i].pw = sol[-j - 1][i].pw; //
+                sol[j][i].pw = sol[-j - 1][i].pw; 
                 for (nc = 0; nc < DOF_reaction; ++nc)
                 {
                     sol[j][i].cw[nc] = sol[-j - 1][i].cw[nc];
@@ -967,9 +1001,13 @@ PetscErrorCode CopyOldVector(Vec sol, PhysicalField **xold, void *ptr)
     UserCtx *user = (UserCtx *)ptr;
     DM da = user->da;
     PhysicalField **sol_local;
-    PetscInt i, j, xl, yl, zl, nxl, nyl, nzl;
+    PetscInt i, j, xg, yg, zg, nxg, nyg, nzg, xl, yl, zl, nxl, nyl, nzl, nc, mx, my;
     PetscFunctionBeginUser;
+    mx = user->n1;
+    my = user->n2;
     ierr = DMDAGetCorners(da, &xl, &yl, &zl, &nxl, &nyl, &nzl);
+    CHKERRQ(ierr);
+    ierr = DMDAGetGhostCorners(da, &xg, &yg, &zg, &nxg, &nyg, &nzg);
     CHKERRQ(ierr);
     ierr = DMDAVecGetArray(da, sol, &sol_local);
     CHKERRQ(ierr);
@@ -984,6 +1022,66 @@ PetscErrorCode CopyOldVector(Vec sol, PhysicalField **xold, void *ptr)
             }
         }
     }
+
+     if (xl == 0)
+    {
+        for (j = yg; j < yg + nyg; j++)
+        {
+            for (i = -WIDTH; i < 0; i++)
+            {
+                user->xold[j][i].pw = 2 * P_init - user->xold[j][-i - 1].pw;
+                for (nc = 0; nc < DOF_reaction; ++nc)
+                {
+                    user->xold[j][i].cw[nc] = 2 * c_BC_L - user->xold[j][-i - 1].cw[nc];
+                }
+            }
+        }
+    }
+    if (xl + nxl == mx)
+    {
+        for (j = yg; j < yg + nyg; j++)
+        {
+            for (i = mx; i < mx + WIDTH; i++)
+            {
+                user->xold[j][i].pw = -user->xold[j][2 * mx - i - 1].pw; //
+                for (nc = 0; nc < DOF_reaction; ++nc)
+                {
+                    user->xold[j][mx].cw[nc] =
+                        2 * c_BC_R - user->xold[j][2 * mx - i - 1].cw[nc]; //
+                }
+            }
+        }
+    }
+    if (yl == 0)
+    {
+        for (i = xg; i < xg + nxg; i++)
+        {
+            for (j = -WIDTH; j < 0; j++)
+            {
+                user->xold[j][i].pw = user->xold[-j - 1][i].pw; 
+                for (nc = 0; nc < DOF_reaction; ++nc)
+                {
+                    user->xold[j][i].cw[nc] = user->xold[-j - 1][i].cw[nc];
+                }
+            }
+        }
+    }
+    if (yl + nyl == my)
+    {
+        for (i = xg; i < xg + nxg; i++)
+        {
+            for (j = my; j < my + WIDTH; j++)
+            {
+                user->xold[j][i].pw = user->xold[2 * my - j - 1][i].pw;
+                for (nc = 0; nc < DOF_reaction; ++nc)
+                {
+                    user->xold[j][i].cw[nc] = user->xold[2 * my - j - 1][i].cw[nc];
+                }
+            }
+        }
+    }
+
+
     ierr = DMDAVecRestoreArray(da, sol, &sol_local);
     CHKERRQ(ierr);
     PetscFunctionReturn(0);

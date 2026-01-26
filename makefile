@@ -77,10 +77,10 @@ runss_2:
 
 
 runss_3:
-	-@${MPIEXEC} mpirun -np 16  ./fi -preload 0 -n1 220 -n2 60 -p 0  -da_overlop 2 \
-	 -tsize 0.01 -tfinal 10000 -tsmax 10000 -tsstart 0  \
+	-@${MPIEXEC} mpirun -np 16  ./fi -preload 0 -n1 220 -n2 60 -p 0 -flow_da_overlap 1 -perm_da_overlap 0  \
+	 -tsize 0.01 -tfinal 100 -tsmax 10000 -tsstart 0 -reaction_da_overlap 0 -secondary_da_overlap 0  \
 	 -snes_converged_reason -snes_atol 1.e-10 -snes_rtol 1.e-6 -snes_stol 1.e-100 \
-	 -snes_type aspin -npc_snes_type nasm -npc_sub_snes_type newtonls -npc_sub_snes_atol 1.e-10 -npc_sub_snes_rtol 1.e-6 -npc_sub_snes_stol 1.e-100  \
-	 -npc_sub_snes_stol 1.e-10 -snes_linesearch_type basic -npc_sub_snes_linesearch_type bt -snes_monitor_short  \
+	  -snes_type aspin   -npc_snes_type nasm -npc_sub_snes_type newtonls -npc_sub_snes_atol 1.e-10 -npc_sub_snes_rtol 1.e-6 -npc_sub_snes_stol 1.e-100  \
+	 -npc_sub_snes_stol 1.e-10 -snes_linesearch_type bt -npc_sub_snes_linesearch_type bt -snes_monitor_short  \
 	 -npc_sub_ksp_type gmres -npc_sub_pc_type ilu  -npc_sub_pc_factor_levels 2 \
 
