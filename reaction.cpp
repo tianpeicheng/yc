@@ -51,7 +51,7 @@ PetscErrorCode PorousFlowAqueousPreDisChemistry_computeQpReactionRates(double te
   InitializeArray(_primary_activity_coefficient, DOF_reaction);
   InitializeArray(_primary, DOF_reaction);
   InitializeArray(_theta_exponent, DOF_reaction);
-  for (int r = 0; r < DOF_reaction; ++r)
+  for (int r = 0; r < DOF_Preparation; ++r)
   {
     _mineral_sat->reaction[r] = (_equilibrium_constants_as_log10 ? pow(10.0, -(358 - (temp)) / (358 - 294))
                                                                  : 1.0 / -(358 - (temp)) / (358 - 294));
@@ -148,7 +148,7 @@ void InitializeArray(PetscScalar *array, PetscInt size)
   }
 }
 
-void PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(SecondaryReactionField *_sec_conc, SecondaryReactionField *_equilibrium_constants, ReactionField *_mass_frac, PhysicalField *x, bool _equilibrium_constants_as_log10, void *ptr)
+void PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(SecondaryReactionField *_sec_conc, SecondaryReactionField *_equilibrium_constants, ReactionField *_mass_frac, PhysicalField *x, bool _equilibrium_constants_as_log10, void *ptr, double size)
 {
   UserCtx *user = (UserCtx *)ptr;
   TstepCtx *tsctx = user->tsctx;
@@ -159,24 +159,22 @@ void PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(Secon
   }
   else
   {
-    PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpSecondaryConcentrations(_sec_conc, _equilibrium_constants, x, _equilibrium_constants_as_log10);
-
+    PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpSecondaryConcentrations(_sec_conc, _equilibrium_constants, x, _equilibrium_constants_as_log10, size);
   }
   for (int i = 0; i < DOF_reaction; ++i)
   {
-
     _mass_frac->reaction[i] = x->cw[i];
 
     for (int r = 0; r < DOF_Secondary; ++r)
     {
-
       _mass_frac->reaction[i] = _mass_frac->reaction[i] + stoichiometry_Secondary(r, i) * _sec_conc->reaction_secondary[r];
     }
+
   }
 }
 
 
-void PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpSecondaryConcentrations(SecondaryReactionField *_sec_conc, SecondaryReactionField *_equilibrium_constants, PhysicalField *x, bool _equilibrium_constants_as_log10)
+void PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpSecondaryConcentrations(SecondaryReactionField *_sec_conc, SecondaryReactionField *_equilibrium_constants, PhysicalField *x, bool _equilibrium_constants_as_log10, double tsize)
 {
   for (int r = 0; r < DOF_Secondary; ++r)
   {
@@ -212,11 +210,11 @@ void PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpSecondaryConcent
       #endif
 
     }
-
     _sec_conc->reaction_secondary[r] *=
         (_equilibrium_constants_as_log10 ? pow(10.0, (_equilibrium_constants->reaction_secondary[r]))
                                          : (_equilibrium_constants->reaction_secondary[r]));
     _sec_conc->reaction_secondary[r] /= _secondary_activity_coefficients[r];
+
 
   }
 }
@@ -236,7 +234,7 @@ void KineticDisPreRateAux_All(const PhysicalField * _vals,
 
     for (int j = 0; j < DOF_mineral; ++j)
     {
-        double omega = 1.0;   // ✅ 每个 j 重置！
+        double omega = 1.0;   
 
         if (DOF_reaction > 0)
         {

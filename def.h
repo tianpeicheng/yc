@@ -18,9 +18,11 @@
 #define DOF_perm 2
 #define DOF_Secondary 5
 #define DOF_mineral 0
+#define DOF_Preparation 1
 #elif EXAMPLE == 2
 #define DOF 5
 #define DOF_reaction 4
+#define DOF_Preparation 0
 #define DOF_perm 3
 #define DOF_Secondary 6
 #define DOF_mineral 1
@@ -43,7 +45,7 @@
 #define UNIT_L (0.3048)
 #define UNIT_T (1.0)
 #define UNIT_VIS (1e-3) 
-
+#define UNIT_MD   (9.869233e-16)
 
 #if EXAMPLE == 1 
 #define L1 (1)
@@ -65,7 +67,6 @@
 #define P_init (1.e+6)    // psi
 #define rho_init (1000.0) // 56 lb/cu-ft =897.033948kg/m^3
 #define phi_init (0.1)
-
 #define c_init (0.0)
 #define mu (1e-3)
 #define N1 100
@@ -94,8 +95,8 @@
 #define N2 100
 #define TSIZE 0.01
 #elif EXAMPLE==3
-#define L1 (1)
-#define L2 (0.25)
+#define L1 (220*UNIT_L)
+#define L2 (120*UNIT_L)
 #define _bulk_modulus (2.0e9)
 #define _thermal_expansion (2.14e-4)
 #define reference_temperature (298.15)
@@ -107,12 +108,10 @@
 #define _one_over_ref_temp (1 / 298.15)
 #define kinetic_rate_constant (3e-4)
 #define reference_chemistry (0.1)
-#define P_BC_L (2 * 100 * 1e6)
 #define c_BC_L (5e-2)
 #define c_BC_R (1.e-6)
-#define P_init (1.e+6)    // psi
-#define rho_init (1000.0) // 56 lb/cu-ft =897.033948kg/m^3
-#define phi_init (0.1)
+#define P_init (1.e+6)   
+#define rho_init (1000.0) 
 #define c_init (0.0)
 #define mu (1e-3)
 #define N1 100
@@ -292,13 +291,13 @@ PetscErrorCode FormFunction_subspace(SNES snes, Vec X, Vec F, void *ptr);
 void InitializeArray(PetscScalar *array, PetscInt size);
 void PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpSecondaryConcentrations(
     SecondaryReactionField *_sec_conc, SecondaryReactionField *_equilibrium_constants,
-    PhysicalField *x, bool _equilibrium_constants_as_log10);
+    PhysicalField *x, bool _equilibrium_constants_as_log10, double tsize);
 void PorousFlowMassFractionAqueousEquilibriumChemistry_initQpSecondaryConcentrations(
     SecondaryReactionField *_sec_conc);
 void PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
     SecondaryReactionField *_sec_conc, SecondaryReactionField *_equilibrium_constants,
     ReactionField *_mass_frac, PhysicalField *x,
-    bool _equilibrium_constants_as_log10, void *ptr);
+    bool _equilibrium_constants_as_log10, void *ptr, double tsize);
 extern PetscErrorCode DetermineNewPartition(void *ptr);
 extern PetscErrorCode PorousFlowAqueousPreDisChemistry_subspace(
     Vec X, bool _equilibrium_constants_as_log10, PetscInt _num_reactions,

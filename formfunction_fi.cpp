@@ -1,4 +1,4 @@
-#include <float.h> // 用于DBL_MAX
+#include <float.h> 
 #include <limits.h>
 #include <math.h>
 #include <petscdm.h>
@@ -6,7 +6,7 @@
 #include <petscsnes.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h> // 包含 abs 函数的头文件
+#include <stdlib.h> 
 #include "def.h"
 #include "petscsys.h"
 #include "reaction.h"
@@ -66,9 +66,8 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
                 x_left.cw[0] = 2 * 1 - x_center.cw[0];
                 if (tsctx->tcurr < T_final)
                 {
-
-                    x_left.cw[1] = 2 * (5.e-2 + (1.e-6 - 5.e-2) * (sin(0.5 * 3.14 * tsctx->tcurr / T_final))) - x_center.cw[1];
-                    x_left.cw[3] = 2 * (1.e-6 + (5.e-2 - 1.e-6) * (sin(0.5 * 3.14 * tsctx->tcurr / T_final))) - x_center.cw[3];
+                    x_left.cw[1] = 2 * (5.e-2 + (1.e-6 - 5.e-2) * (sin(0.5 * 3.14159 * tsctx->tcurr / T_final))) - x_center.cw[1];
+                    x_left.cw[3] = 2 * (1.e-6 + (5.e-2 - 1.e-6) * (sin(0.5 * 3.14159 * tsctx->tcurr / T_final))) - x_center.cw[3];
                 }
                 else
                 {
@@ -127,6 +126,7 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
             {
                 x_top = x[j + 1][i];
             }
+             
             ReactionField _mass_frac_left, _mass_frac_right, _mass_frac_bottom,
                 _mass_frac_top, _mass_frac;
             SecondaryReactionField _sec_conc_left, _sec_conc_right, _sec_conc_bottom,
@@ -135,25 +135,25 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
                 &_sec_conc_left, &user->eqm_k_field[j][i],
                 &_mass_frac_left, &x_left, _equilibrium_constants_as_log10,
-                user);
+                user,tsctx->tcurr);
 
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
                 &_sec_conc_right, &user->eqm_k_field[j][i],
                 &_mass_frac_right, &x_right, _equilibrium_constants_as_log10,
-                user);
+                user,tsctx->tcurr);
 
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
                 &_sec_conc, &user->eqm_k_field[j][i], &_mass_frac,
-                &x_center, _equilibrium_constants_as_log10, user);
+                &x_center, _equilibrium_constants_as_log10, user,tsctx->tcurr);
 
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
                 &_sec_conc_bottom, &user->eqm_k_field[j][i],
                 &_mass_frac_bottom, &x_bottom, _equilibrium_constants_as_log10,
-                user);
+                user,tsctx->tcurr);
 
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
                 &_sec_conc_top, &user->eqm_k_field[j][i], &_mass_frac_top,
-                &x_top, _equilibrium_constants_as_log10, user);
+                &x_top, _equilibrium_constants_as_log10, user,tsctx->tcurr);
             
 
             ReactionField _mineral_sat, _reaction_rate ;
@@ -168,7 +168,6 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
 #endif
 
             diff = 0.5 * (dx / (K1_xx(i - 1, j)) + dx / (K1_xx(i, j)));
-
             U_L = -conc_1(i, j) * ((x_center.pw - x_left.pw)) / diff;
 
             diff = 0.5 * (dx / (K1_xx(i + 1, j)) + dx / (K1_xx(i, j)));
@@ -218,14 +217,29 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
                              _reaction_rate.reaction[q] * user->phi_field[j][i].xx[0];
                 
                 }
-#endif
-                f[j][i].cw[nc] = alpha[nc] + (fluxR1 - fluxL1) / dx +
-                                 (fluxT1 - fluxB1) / dy - ((fluxR2 - fluxL2) / dx + (fluxT2 - fluxB2) / dy) + qn[nc];
+#endif  
+
+
+double scaling_1=1;
+#if EXAMPLE==2
+if(nc==2){
+    scaling_1=1.e+6;
+}
+#endif  
+     f[j][i].cw[nc] = scaling_1*(alpha[nc] + (fluxR1 - fluxL1) / dx +
+                                 (fluxT1 - fluxB1) / dy - ((fluxR2 - fluxL2) / dx + (fluxT2 - fluxB2) / dy) + qn[nc]);
+     
             }
-#if EXAMPLE == 1||EXAMPLE==3
+#if EXAMPLE == 1
             f[j][i].pw = (fluxR - fluxL) / dx + (fluxT - fluxB) / dy;
 #elif EXAMPLE == 2
-            f[j][i].pw = (fluxR - fluxL) / dx + (fluxT - fluxB) / dy;// x[j][i].pw - (60 - 50 * x_loc);
+            f[j][i].pw = x[j][i].pw - (60 - 50 * x_loc);
+#elif EXAMPLE==3
+            double alpha1=0;
+           alpha1 = (rho(i, j) * user->phi_field[j][i].xx[0] -
+                    rho_old(i, j) * user->phi_old_field[j][i].xx[0]) /
+                    tsctx->tsize;
+            f[j][i].pw = alpha1+(fluxR - fluxL) / dx + (fluxT - fluxB) / dy;
 #endif
         }
     }

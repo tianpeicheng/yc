@@ -1,5 +1,4 @@
-static char help[] = "3D single-phase flow, by LiRui .\n\\n";
-// aspin
+static char help[] = "3D single-phase flow, by TianpeiCheng .\n\\n";
 #include <petscdm.h>
 #include <petscdmda.h>
 #include <petscsnes.h>
@@ -154,11 +153,11 @@ int main(int argc, char **argv)
     CHKERRQ(ierr);
     ierr = DMSetUp(user->da_secondary);
     CHKERRQ(ierr);
-    #if EXAMPLE == 2
+#if EXAMPLE == 2
     ierr = DMSetUp(user->da_mineral);
     CHKERRQ(ierr);
-    #endif
-#if EXAMPLE == 1||EXAMPLE==3
+#endif
+#if EXAMPLE == 1 || EXAMPLE == 3
     ierr = DMDASetFieldName(user->da, 0, "pressure");
     CHKERRQ(ierr);
     ierr = DMDASetFieldName(user->da, 1, "h+");
@@ -176,11 +175,11 @@ int main(int argc, char **argv)
     CHKERRQ(ierr);
     ierr = DMDASetFieldName(user->da, 1, "tracer");
     CHKERRQ(ierr);
-    ierr = DMDASetFieldName(user->da, 2, "ca2+");
+    ierr = DMDASetFieldName(user->da, 2, "hco3-");
     CHKERRQ(ierr);
     ierr = DMDASetFieldName(user->da, 3, "h+");
     CHKERRQ(ierr);
-    ierr = DMDASetFieldName(user->da, 4, "hco3-");
+    ierr = DMDASetFieldName(user->da, 4, "ca2+");
     CHKERRQ(ierr);
 #endif
     ierr = SNESSetDM(snes, user->da);
@@ -196,10 +195,10 @@ int main(int argc, char **argv)
     user->dy = L2 / (PetscScalar)(user->n2);
 
     ierr = DMCreateGlobalVector(user->da, &user->sol);
-    #if EXAMPLE==2
+#if EXAMPLE == 2
     ierr = DMCreateGlobalVector(user->da_mineral, &user->sol_mineral);
     ierr = DMCreateGlobalVector(user->da_mineral, &user->sol_mineral_old);
-    #endif
+#endif
     ierr = VecDuplicate(user->sol, &(user->myF));
     CHKERRQ(ierr);
     ierr = DMDAGetArray(user->da_perm, PETSC_TRUE, (void **)&(user->phi_field));
@@ -223,7 +222,7 @@ int main(int argc, char **argv)
     CHKERRQ(ierr);
     ierr = DMDAGetArray(user->da, PETSC_FALSE, (void **)&(user->xold));
     CHKERRQ(ierr);
-#if EXAMPLE==2
+#if EXAMPLE == 2
     ierr = DMDAGetArray(user->da_mineral, PETSC_TRUE, (void **)&(user->eqm_k_mineral_field));
     CHKERRQ(ierr);
 
@@ -283,15 +282,15 @@ int main(int argc, char **argv)
 
     ierr = VecDestroy(&user->sol);
     CHKERRQ(ierr);
-    #if EXAMPLE==2
+#if EXAMPLE == 2
     ierr = VecDestroy(&user->sol_mineral);
     CHKERRQ(ierr);
     ierr = VecDestroy(&user->sol_mineral_old);
     CHKERRQ(ierr);
-    #endif
+#endif
     ierr = VecDestroy(&user->myF);
     CHKERRQ(ierr);
- #if EXAMPLE==2
+#if EXAMPLE == 2
     ierr = DMDARestoreArray(user->da_mineral, PETSC_TRUE, (void **)&(user->eqm_k_mineral_field));
     CHKERRQ(ierr);
 #endif
@@ -322,10 +321,10 @@ int main(int argc, char **argv)
     CHKERRQ(ierr);
     ierr = DMDestroy(&user->da_secondary);
     CHKERRQ(ierr);
-    #if EXAMPLE == 2
+#if EXAMPLE == 2
     ierr = DMDestroy(&user->da_mineral);
     CHKERRQ(ierr);
-    #endif
+#endif
     ierr = SNESDestroy(&snes);
     CHKERRQ(ierr);
     ierr = PetscFree(user);
@@ -442,7 +441,16 @@ PetscErrorCode Update(void *ptr)
         ierr = Updata_Reaction(user);
 
         ierr = CopyOldVector(user->sol, user->xold, user);
-
+        if (tsctx->tscurr % 100 == 0)
+        {
+            sprintf(filename, "example=%dpermeability_xxascii_%d.vts", EXAMPLE,
+                    tsctx->tscurr);
+            ierr = DataSaveVTK(user->sol, filename);
+            sprintf(filename, "example=%dpermeability_xxascii_%d.data", EXAMPLE,
+                    tsctx->tscurr);
+            ierr = DataSaveASCII(user->sol, filename);
+            CHKERRQ(ierr);
+        }
         PetscReal litspit = 0.0;
         PetscReal its1 = 0.0;
         PetscReal lits1 = 0.0;
@@ -504,13 +512,7 @@ PetscErrorCode Update(void *ptr)
     ierr = PetscPrintf(comm, " Final time = %g, Cost time = %g\n", tsctx->tcurr,
                        totaltime);
     CHKERRQ(ierr);
-    sprintf(filename, "example=%dpermeability_xxascii_%d.vts", EXAMPLE,
-            tsctx->tscurr);
-    ierr = DataSaveVTK(user->sol, filename);
-    sprintf(filename, "example=%dpermeability_xxascii_%d.data", EXAMPLE,
-            tsctx->tscurr);
-    ierr = DataSaveASCII(user->sol, filename);
-    CHKERRQ(ierr);
+
     if (!param->PetscPreLoading)
     {
         ierr = PetscFClose(comm, fp);
@@ -524,30 +526,92 @@ PetscErrorCode FormInitialValue_Perm_local(void *ptr)
 {
     PetscErrorCode ierr;
     UserCtx *user = (UserCtx *)ptr;
-    DM da = user->da;
-    PetscInt i, j, xg, yg, zg, nxg, nyg, nzg;
+    DM da = user->da, da_perm = user->da_perm;
+    PermField **perm_field_local;
+    PetscInt i, j, xg, yg, zg, nxg, nyg, nzg, mx, my;
     PetscFunctionBeginUser;
     ierr = DMDAGetGhostCorners(da, &xg, &yg, &zg, &nxg, &nyg, &nzg);
     CHKERRQ(ierr);
+#if EXAMPLE == 3
+    mx = user->n1;
+    my = user->n2;
+    Vec perm_local, u_per;
+    PetscViewer dataviewer;
+    ierr = DMCreateGlobalVector(da_perm, &u_per);
+    CHKERRQ(ierr);
+    ierr = DMCreateLocalVector(da_perm, &perm_local);
+    CHKERRQ(ierr);
+    ierr = PetscViewerBinaryOpen(PETSC_COMM_WORLD, "SPE85.bin", FILE_MODE_READ, &dataviewer);
+    CHKERRQ(ierr);
+    ierr = VecLoad(u_per, dataviewer);
+    CHKERRQ(ierr);
+    ierr = VecScale(u_per, UNIT_MD);
+    CHKERRQ(ierr);
+    ierr = PetscViewerDestroy(&dataviewer);
+    CHKERRQ(ierr);
+    ierr = DMGlobalToLocalBegin(da_perm, u_per, INSERT_VALUES, perm_local);
+    CHKERRQ(ierr);
+    ierr = DMGlobalToLocalEnd(da_perm, u_per, INSERT_VALUES, perm_local);
+    CHKERRQ(ierr);
+    ierr = DMDAVecGetArray(da_perm, perm_local, &perm_field_local);
+    CHKERRQ(ierr);
+#endif
     for (j = yg; j < yg + nyg; j++)
     {
         for (i = xg; i < xg + nxg; i++)
         {
+
+#if EXAMPLE == 1
             for (int nc = 0; nc < DOF_perm; nc++)
             {
-#if EXAMPLE == 1||EXAMPLE==3
                 user->perm_field[j][i].xx[nc] = 1e-10;
                 user->phi_field[j][i].xx[nc] = 0.2;
                 user->phi_old_field[j][i].xx[nc] = 0.2;
+            }
 #elif EXAMPLE == 2
+            for (int nc = 0; nc < DOF_perm; nc++)
+            {
                 user->perm_field[j][i].xx[nc] = 1;
                 user->phi_field[j][i].xx[nc] = 0.2;
                 user->phi_old_field[j][i].xx[nc] = 0.2;
-#endif
             }
+#elif EXAMPLE == 3
+
+            if (i < 0)
+            {
+                perm_field_local[j][i].xx[0] = perm_field_local[j][0].xx[0];
+            }
+            if (i > (mx - 1))
+            {
+                perm_field_local[j][i].xx[0] = perm_field_local[j][mx - 1].xx[0];
+            }
+            if (j < 0)
+            {
+                perm_field_local[j][i].xx[0] = perm_field_local[0][i].xx[0];
+            }
+            if (j > (my - 1))
+            {
+                perm_field_local[j][i].xx[0] = perm_field_local[my - 1][i].xx[0];
+            }
+            perm_field_local[j][i].xx[1] = perm_field_local[j][i].xx[0];
+            for (int nc = 0; nc < DOF_perm; nc++)
+            {
+                user->perm_field[j][i].xx[nc] = 1e-10;//perm_field_local[j][i].xx[nc];
+                user->phi_field[j][i].xx[nc] = 0.2;
+                user->phi_old_field[j][i].xx[nc] = 0.2;
+            }
+
+#endif
         }
     }
-
+#if EXAMPLE == 3
+    ierr = DMDAVecRestoreArray(da_perm, perm_local, &perm_field_local);
+    CHKERRQ(ierr);
+    ierr = DMRestoreGlobalVector(da_perm, &u_per);
+    CHKERRQ(ierr);
+    ierr = DMRestoreLocalVector(da_perm, &perm_local);
+    CHKERRQ(ierr);
+#endif
     PetscFunctionReturn(0);
 }
 
@@ -569,7 +633,7 @@ PetscErrorCode FormInitialValue_local(void *ptr)
         for (i = xl; i < xl + nxl; i++)
         {
             x_loc = ((PetscScalar)i + 0.5) * user->dx;
-#if EXAMPLE == 1||EXAMPLE==3
+#if EXAMPLE == 1 || EXAMPLE == 3
             sol[j][i].pw = P_init;
             user->xold[j][i].pw = P_init;
             for (int nc = 0; nc < DOF_reaction; ++nc)
@@ -588,6 +652,7 @@ PetscErrorCode FormInitialValue_local(void *ptr)
 
 #elif EXAMPLE == 2
             double c_init[DOF_reaction] = {0.0, 5.0e-2, 1.e-7, 1.0e-6};
+            double c_init_1[DOF_reaction] = {1.0, 1.0e-6, 1.e-7, 1.0e-6};
             sol[j][i].pw = 60 - 50 * x_loc;
             user->xold[j][i].pw = 60 - 50 * x_loc;
             for (int nc = 0; nc < DOF_reaction; ++nc)
@@ -608,16 +673,20 @@ PetscErrorCode FormInitialValue_Reaction_local(void *ptr)
 {
     PetscErrorCode ierr;
     UserCtx *user = (UserCtx *)ptr;
+    TstepCtx *tsctx = user->tsctx;
     DM da = user->da;
 
-#if EXAMPLE == 1||EXAMPLE==3
+#if EXAMPLE == 1 || EXAMPLE == 3
     double eqm_data[DOF_Secondary] = {2.19e6, 4.73e-11, 0.222, 1e-2, 1e-3};
 #elif EXAMPLE == 2
     double eqm_data[DOF_Secondary] = {6.341, -10.325, -7.009, -0.653, -12.85, -13.991};
 #endif
     PetscInt i, j, xg, yg, zg, nxg, nyg, nzg;
+    PetscInt xl, yl, zl, nxl, nyl, nzl;
     PetscFunctionBeginUser;
     ierr = DMDAGetGhostCorners(da, &xg, &yg, &zg, &nxg, &nyg, &nzg);
+    CHKERRQ(ierr);
+    ierr = DMDAGetCorners(da, &xl, &yl, &zl, &nxl, &nyl, &nzl);
     CHKERRQ(ierr);
 #if EXAMPLE == 2
     Vec loc_X;
@@ -636,7 +705,7 @@ PetscErrorCode FormInitialValue_Reaction_local(void *ptr)
         for (i = xg; i < xg + nxg; i++)
         {
 
-#if EXAMPLE == 1||EXAMPLE==3
+#if EXAMPLE == 1 || EXAMPLE == 3
             for (int nc = 0; nc < DOF_reaction; ++nc)
             {
                 user->_mass_frac_old_field[j][i].reaction[nc] = 1.e-6;
@@ -648,7 +717,7 @@ PetscErrorCode FormInitialValue_Reaction_local(void *ptr)
             }
 
 #elif EXAMPLE == 2
-            double c_init[DOF_reaction] = {0.0, 5.0e-2, 1.e-7, 1.0e-6};
+
             double eqm_mineral_data[DOF_mineral] = {1.8487};
             for (int nc = 0; nc < DOF_Secondary; ++nc)
 
@@ -657,14 +726,6 @@ PetscErrorCode FormInitialValue_Reaction_local(void *ptr)
                 user->_sec_conc_old_field[j][i].reaction_secondary[nc] = 0.0;
             }
 
-            for (int nc = 0; nc < DOF_reaction; ++nc)
-            {
-                SecondaryReactionField _sec_conc;
-                PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
-                    &_sec_conc, &user->eqm_k_field[j][i],
-                    &user->_mass_frac_old_field[j][i], &sol[j][i], _equilibrium_constants_as_log10,
-                    user);
-            }
             for (int nc = 0; nc < DOF_mineral; ++nc)
 
             {
@@ -674,6 +735,23 @@ PetscErrorCode FormInitialValue_Reaction_local(void *ptr)
 #endif
         }
     }
+#if EXAMPLE == 2
+    for (j = yl; j < yl + nyl; j++)
+    {
+        for (i = xl; i < xl + nxl; i++)
+        {
+            for (int nc = 0; nc < DOF_reaction; ++nc)
+            {
+                SecondaryReactionField _sec_conc;
+                PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
+                    &_sec_conc, &user->eqm_k_field[j][i],
+                    &user->_mass_frac_old_field[j][i], &user->xold[j][i], _equilibrium_constants_as_log10,
+                    user, tsctx->tcurr);
+                //  user->_mass_frac_old_field[j][i].reaction[nc] = 0.0;
+            }
+        }
+    }
+#endif
 #if EXAMPLE == 2
     ierr = DMDAVecRestoreArray(da, loc_X, &sol);
     CHKERRQ(ierr);
@@ -710,7 +788,7 @@ PetscErrorCode Updata_Reaction(void *ptr)
     CHKERRQ(ierr);
     ierr = DMDAVecGetArray(da, loc_X, &sol);
     CHKERRQ(ierr);
-#if EXAMPLE == 1||EXAMPLE==3
+#if EXAMPLE == 1 || EXAMPLE == 3
     if (xl == 0)
     {
         for (j = yg; j < yg + nyg; j++)
@@ -760,100 +838,99 @@ PetscErrorCode Updata_Reaction(void *ptr)
         {
             for (j = my; j < my + WIDTH; j++)
             {
-                sol[j][i].pw = sol[2 * my - j - 1][i].pw; 
+                sol[j][i].pw = sol[2 * my - j - 1][i].pw;
                 for (nc = 0; nc < DOF_reaction; ++nc)
                 {
-                    sol[j][i].cw[nc] = sol[2 * my - j - 1][i].cw[nc]; 
+                    sol[j][i].cw[nc] = sol[2 * my - j - 1][i].cw[nc];
                 }
             }
         }
     }
 #elif EXAMPLE == 2
-if (xl == 0)
-	{
-		for (j = yg; j < yg + nyg; j++)
-		{
-			for (i = -WIDTH; i < 0; i++)
-			{
+    if (xl == 0)
+    {
+        for (j = yg; j < yg + nyg; j++)
+        {
+            for (i = -WIDTH; i < 0; i++)
+            {
 
-				sol[j][i].pw = 2 * 60 - sol[j][-i - 1].pw;
-				sol[j][i].cw[0] = 2 * 1 - sol[j][-i - 1].cw[0];
-				if (tsctx->tcurr < T_final)
-				{
+                sol[j][i].pw = 2 * 60 - sol[j][-i - 1].pw;
+                sol[j][i].cw[0] = 2 * 1 - sol[j][-i - 1].cw[0];
+                if (tsctx->tcurr < T_final)
+                {
 
-					sol[j][i].cw[1] = 2 * (5.e-2 + (1.e-6 - 5.e-2) * (sin(0.5 * 3.14 * tsctx->tcurr / T_final))) - sol[j][-i - 1].cw[1];
-					sol[j][i].cw[3] = 2 * (1.e-6 + (5.e-2 - 1.e-6) * (sin(0.5 * 3.14 * tsctx->tcurr / T_final))) - sol[j][-i - 1].cw[3];
-				}
-				else
-				{
-					sol[j][i].cw[1] = 2 * 1.e-6 - sol[j][-i - 1].cw[1];
-					sol[j][i].cw[3] = 2 * 5.e-2 - sol[j][-i - 1].cw[3];
-				}
-				sol[j][i].cw[2] = 2 * 1.e-7 - sol[j][-i - 1].cw[2];
-			}
-		}
-	}
+                    sol[j][i].cw[1] = 2 * (5.e-2 + (1.e-6 - 5.e-2) * (sin(0.5 * 3.14 * tsctx->tcurr / T_final))) - sol[j][-i - 1].cw[1];
+                    sol[j][i].cw[3] = 2 * (1.e-6 + (5.e-2 - 1.e-6) * (sin(0.5 * 3.14 * tsctx->tcurr / T_final))) - sol[j][-i - 1].cw[3];
+                }
+                else
+                {
+                    sol[j][i].cw[1] = 2 * 1.e-6 - sol[j][-i - 1].cw[1];
+                    sol[j][i].cw[3] = 2 * 5.e-2 - sol[j][-i - 1].cw[3];
+                }
+                sol[j][i].cw[2] = 2 * 1.e-7 - sol[j][-i - 1].cw[2];
+            }
+        }
+    }
 
-	if (xl + nxl == mx)
-	{
-		for (j = yg; j < yg + nyg; j++)
-		{
-			for (i = mx; i < mx + WIDTH; i++)
-			{
+    if (xl + nxl == mx)
+    {
+        for (j = yg; j < yg + nyg; j++)
+        {
+            for (i = mx; i < mx + WIDTH; i++)
+            {
 
-				sol[j][i].pw = 2 * 10 - sol[j][2 * mx - i - 1].pw;
-				sol[j][i].cw[0] = sol[j][2 * mx - i - 1].cw[0];
-				sol[j][i].cw[1] = sol[j][2 * mx - i - 1].cw[1];
-				sol[j][i].cw[2] = sol[j][2 * mx - i - 1].cw[2];
-				sol[j][i].cw[3] = sol[j][2 * mx - i - 1].cw[3];
-			}
-		}
-	}
+                sol[j][i].pw = 2 * 10 - sol[j][2 * mx - i - 1].pw;
+                sol[j][i].cw[0] = sol[j][2 * mx - i - 1].cw[0];
+                sol[j][i].cw[1] = sol[j][2 * mx - i - 1].cw[1];
+                sol[j][i].cw[2] = sol[j][2 * mx - i - 1].cw[2];
+                sol[j][i].cw[3] = sol[j][2 * mx - i - 1].cw[3];
+            }
+        }
+    }
 
-	if (yl == 0)
-	{
-		for (i = xg; i < xg + nxg; i++)
-		{
-			for (j = -WIDTH; j < 0; j++)
-			{
+    if (yl == 0)
+    {
+        for (i = xg; i < xg + nxg; i++)
+        {
+            for (j = -WIDTH; j < 0; j++)
+            {
 
-				sol[j][i].pw = sol[-j - 1][i].pw;
-				sol[j][i].cw[0] = sol[-j - 1][i].cw[0];
-				sol[j][i].cw[1] = sol[-j - 1][i].cw[1];
-				sol[j][i].cw[2] = sol[-j - 1][i].cw[2];
-				sol[j][i].cw[3] = sol[-j - 1][i].cw[3];
-			}
-		}
-	}
+                sol[j][i].pw = sol[-j - 1][i].pw;
+                sol[j][i].cw[0] = sol[-j - 1][i].cw[0];
+                sol[j][i].cw[1] = sol[-j - 1][i].cw[1];
+                sol[j][i].cw[2] = sol[-j - 1][i].cw[2];
+                sol[j][i].cw[3] = sol[-j - 1][i].cw[3];
+            }
+        }
+    }
 
-	if (yl + nyl == my)
-	{
-		for (i = xg; i < xg + nxg; i++)
-		{
-			for (j = my; j < my + WIDTH; j++)
-			{
+    if (yl + nyl == my)
+    {
+        for (i = xg; i < xg + nxg; i++)
+        {
+            for (j = my; j < my + WIDTH; j++)
+            {
 
-				sol[j][i].pw = sol[2 * my - j - 1][i].pw;
-				sol[j][i].cw[0] = sol[2 * my - j - 1][i].cw[0];
-				sol[j][i].cw[1] = sol[2 * my - j - 1][i].cw[1];
-				sol[j][i].cw[2] = sol[2 * my - j - 1][i].cw[2];
-				sol[j][i].cw[3] = sol[2 * my - j - 1][i].cw[3];
-			}
-		}
-	
-}
+                sol[j][i].pw = sol[2 * my - j - 1][i].pw;
+                sol[j][i].cw[0] = sol[2 * my - j - 1][i].cw[0];
+                sol[j][i].cw[1] = sol[2 * my - j - 1][i].cw[1];
+                sol[j][i].cw[2] = sol[2 * my - j - 1][i].cw[2];
+                sol[j][i].cw[3] = sol[2 * my - j - 1][i].cw[3];
+            }
+        }
+    }
 #endif
     for (j = yg; j < yg + nyg; j++)
     {
         for (i = xg; i < xg + nxg; i++)
         {
-#if EXAMPLE == 1||EXAMPLE==3
+#if EXAMPLE == 1 || EXAMPLE == 3
             SecondaryReactionField _sec_conc;
             ReactionField _mass_frac, _reaction_rate, _mineral_sat;
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
                 &_sec_conc, &user->eqm_k_field[j][i],
                 &_mass_frac, &sol[j][i], _equilibrium_constants_as_log10,
-                user);
+                user, tsctx->tcurr);
             PorousFlowAqueousPreDisChemistry_computeQpReactionRates(
                 reference_temperature_pre, reference_saturation,
                 user->phi_old_field[j][i].xx[0], &user->phi_field[j][i].xx[0], &_mineral_sat,
@@ -870,7 +947,7 @@ if (xl == 0)
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
                 &_sec_conc, &user->eqm_k_field[j][i],
                 &_mass_frac, &sol[j][i], _equilibrium_constants_as_log10,
-                user);
+                user, tsctx->tcurr);
             user->_sec_conc_old_field[j][i] = _sec_conc;
             user->_mass_frac_old_field[j][i] = _mass_frac;
 #endif
@@ -890,7 +967,7 @@ PetscErrorCode CopyOldVector(Vec sol, PhysicalField **xold, void *ptr)
     UserCtx *user = (UserCtx *)ptr;
     DM da = user->da;
     PhysicalField **sol_local;
-    PetscInt i, j,  xl, yl, zl, nxl, nyl, nzl;
+    PetscInt i, j, xl, yl, zl, nxl, nyl, nzl;
     PetscFunctionBeginUser;
     ierr = DMDAGetCorners(da, &xl, &yl, &zl, &nxl, &nyl, &nzl);
     CHKERRQ(ierr);
@@ -911,7 +988,7 @@ PetscErrorCode CopyOldVector(Vec sol, PhysicalField **xold, void *ptr)
     CHKERRQ(ierr);
     PetscFunctionReturn(0);
 }
-#if EXAMPLE==2
+#if EXAMPLE == 2
 PetscErrorCode KineticDisPreConcAux(Vec _vals, Vec _mineral_old, Vec _mineral, double _dt, void *ptr)
 {
 
@@ -937,9 +1014,9 @@ PetscErrorCode KineticDisPreConcAux(Vec _vals, Vec _mineral_old, Vec _mineral, d
 
             for (int q = 0; q < DOF_mineral; ++q)
             {
-            MineralField kinetic_rate;
-           KineticDisPreRateAux_All(&sol[j][i], &user->eqm_k_mineral_field[j][i],
-                              &kinetic_rate);
+                MineralField kinetic_rate;
+                KineticDisPreRateAux_All(&sol[j][i], &user->eqm_k_mineral_field[j][i],
+                                         &kinetic_rate);
                 mineral_species[j][i].reaction_mineral[q] = mineral_species_old[j][i].reaction_mineral[q] + kinetic_rate.reaction_mineral[q] * _dt;
                 if (mineral_species[j][i].reaction_mineral[q] < 0.0)
                     mineral_species[j][i].reaction_mineral[q] = 0.0;
