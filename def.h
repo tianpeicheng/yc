@@ -222,15 +222,18 @@ typedef struct
     PetscInt n1, n2;
     PetscScalar dx, dy;
     Vec myF, sol, sol_mineral, sol_mineral_old;
+#if EXAMPLE==2
+    Vec eqm_k_mineral_local;
+#endif
     DM da, da_reaction, da_perm, da_secondary, da_mineral;
     SNES snes;
-    PermField **phi_field, **perm_field, **phi_old_field;
-    ReactionField **initial_ref_field, **_mass_frac_old_field;
-    SecondaryReactionField **eqm_k_field, **_sec_conc_old_field;
+    // PermField **phi_field, **perm_field, **phi_old_field;
+    // ReactionField **initial_ref_field, **_mass_frac_old_field;
+    // SecondaryReactionField **eqm_k_field, **_sec_conc_old_field;
 #if EXAMPLE==2
     MineralField **eqm_k_mineral_field;
 #endif
-    PhysicalField **xold;
+    // PhysicalField **xold;
 } UserCtx;
 
 EXTERN_C_BEGIN
@@ -345,7 +348,7 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x,
 PetscErrorCode FormInitialValue_Perm_local(void *ptr);
 PetscErrorCode FormInitialValue_Reaction_local(void *ptr);
 PetscErrorCode FormInitialValue_local(void *ptr);
-PetscErrorCode CopyOldVector(Vec sol, PhysicalField **xold, void *ptr);
+PetscErrorCode CopyOldVector(Vec sol,  void *ptr);
 #if EXAMPLE == 2
 void KineticDisPreRateAux_All(const PhysicalField * _vals,
                               const MineralField  * _equilibrium_constants_mineral,
