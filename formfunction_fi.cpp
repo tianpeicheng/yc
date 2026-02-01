@@ -149,12 +149,10 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
                                 &mass_frac_old_field);
     CHKERRQ(ierr);
     PetscInt N, n;
-PetscCall(VecGetSize(mass_frac_old, &N));      // 全局大小
-PetscCall(VecGetLocalSize(mass_frac_old, &n)); // 本 rank 局部大小
+PetscCall(VecGetSize(mass_frac_old, &N));      
+PetscCall(VecGetLocalSize(mass_frac_old, &n)); 
 
-//PetscPrintf(PETSC_COMM_WORLD,
-  //         "mass_frac_oldpetsc: global size = %d, local size = %d\n",
-     //     (int)N, (int)n);
+
 
     ierr = DMDAVecGetArrayRead(reaction_dm, initial_ref,
                                 &initial_ref_field);

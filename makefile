@@ -77,7 +77,7 @@ runss_2:
 
 
 runss_3:
-	mpirun -np 4 ./fi -preload 0 -n1 220 -n2 60 -p 0  -da_overlap 1 \
+	mpirun -np 4 ./fi -preload 0 -n1 220 -n2 60 -p 0  -da_overlap 4 \
 	 -tsize 0.01 -tfinal 0.02 -tsmax 10000 -tsstart 0  \
 	 -snes_converged_reason -snes_atol 1.e-10 -snes_rtol 1.e-6 -snes_stol 1.e-100 \
 	 -snes_type aspin -npc_snes_type nasm -npc_snes_nasm_type basic -npc_sub_snes_type newtonls -npc_sub_snes_atol 1.e-10 -npc_sub_snes_rtol 1.e-6 -npc_sub_snes_stol 1.e-100  \

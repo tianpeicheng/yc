@@ -339,6 +339,12 @@ int main(int argc, char **argv)
     }
     ierr = DMSetFromOptions(user->da);
     CHKERRQ(ierr);
+    ierr = DMSetFromOptions(user->da_reaction);
+    CHKERRQ(ierr);
+    ierr = DMSetFromOptions(user->da_perm);
+    CHKERRQ(ierr);
+    ierr = DMSetFromOptions(user->da_secondary);
+    CHKERRQ(ierr);
     ierr = DMSetUp(user->da);
     CHKERRQ(ierr);
     ierr = DMSetUp(user->da_reaction);
@@ -746,9 +752,9 @@ PetscErrorCode FormInitialValue_Perm_local(void *ptr)
 #if EXAMPLE == 1
             for (int nc = 0; nc < DOF_perm; nc++)
             {
-                user->perm_field[j][i].xx[nc] = 1e-10;
-                user->phi_field[j][i].xx[nc] = 0.2;
-                user->phi_old_field[j][i].xx[nc] = 0.2;
+                perm_field[j][i].xx[nc] = 1e-10;
+                phi_field[j][i].xx[nc] = 0.2;
+                phi_old_field[j][i].xx[nc] = 0.2;
             }
 #elif EXAMPLE == 2
             for (int nc = 0; nc < DOF_perm; nc++)
@@ -760,7 +766,7 @@ PetscErrorCode FormInitialValue_Perm_local(void *ptr)
 #elif EXAMPLE == 3
             for (int nc = 0; nc < DOF_perm; nc++)
             {
-                perm_field[j][i].xx[nc] = 1e-10;//perm_field_local[j][i].xx[nc];
+                perm_field[j][i].xx[nc] = perm_field_local[j][i].xx[nc];
                 phi_field[j][i].xx[nc] = 0.2;
                 phi_old_field[j][i].xx[nc] = 0.2;
             }
