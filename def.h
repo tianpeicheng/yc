@@ -5,7 +5,7 @@
 #include <vector>
 
 #define Smax 1.5
-#define EXAMPLE 3
+#define EXAMPLE 1
 #define TORDER 2
 #define limiter 0 // slope limiter
 #define MATTYPE 0 // 0: aij, 1: baij

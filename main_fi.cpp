@@ -638,7 +638,7 @@ PetscErrorCode FormInitialValue_local(void *ptr)
             user->xold[j][i].pw = P_init;
             for (int nc = 0; nc < DOF_reaction; ++nc)
             {
-                if (y_loc <= 0.25 && (i == 0))
+                if (y_loc <= L2 && (i == 0))
                 {
                     sol[j][i].cw[nc] = c_BC_L;
                     user->xold[j][i].cw[nc] = c_BC_L;
