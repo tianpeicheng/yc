@@ -632,22 +632,6 @@ PetscErrorCode FormInitialValue_Perm_local(void* ptr) {
                 phi_old_field[j][i].xx[nc] = 0.2;
             }
 #elif EXAMPLE == 3
-
-            if (i < 0) {
-                perm_field_local[j][i].xx[0] = perm_field_local[j][0].xx[0];
-            }
-            if (i > (mx - 1)) {
-                perm_field_local[j][i].xx[0] =
-                    perm_field_local[j][mx - 1].xx[0];
-            }
-            if (j < 0) {
-                perm_field_local[j][i].xx[0] = perm_field_local[0][i].xx[0];
-            }
-            if (j > (my - 1)) {
-                perm_field_local[j][i].xx[0] =
-                    perm_field_local[my - 1][i].xx[0];
-            }
-            perm_field_local[j][i].xx[1] = perm_field_local[j][i].xx[0];
             for (int nc = 0; nc < DOF_perm; nc++) {
                 perm_field[j][i].xx[nc] =
                     1.e-10;  // perm_field_local[j][i].xx[nc];

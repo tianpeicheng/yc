@@ -95,8 +95,8 @@
 #define N2 100
 #define TSIZE 0.01
 #elif EXAMPLE==3
-#define L1 (220*UNIT_L)
-#define L2 (120*UNIT_L)
+#define L1 (2.20*UNIT_L)
+#define L2 (1.20*UNIT_L)
 #define _bulk_modulus (2.0e9)
 #define _thermal_expansion (2.14e-4)
 #define reference_temperature (298.15)

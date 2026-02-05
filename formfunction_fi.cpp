@@ -88,40 +88,40 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
     // 对perm_field, phi_field, phi_old_field 的外区赋值.
             if (i < 0)
             {
-                // perm_field_local[j][i].xx[0] = perm_field_local[j][0].xx[0];
                 for (int nc = 0; nc < DOF_perm; nc++)
                 {
-                    perm_field[j][i].xx[nc] =1.e-10;
+                    perm_field[j][i].xx[nc] = perm_field[j][0].xx[nc];
+                    // perm_field[j][i].xx[nc] =1.e-10;
                     phi_field[j][i].xx[nc] = 0.2;
                     phi_old_field[j][i].xx[nc] = 0.2;
                 }
             }
             if (i > (mx - 1))
             {
-                // perm_field_local[j][i].xx[0] = perm_field_local[j][mx - 1].xx[0];
                 for (int nc = 0; nc < DOF_perm; nc++)
                 {
-                    perm_field[j][i].xx[nc] =1.e-10;
+                    perm_field[j][i].xx[nc] = perm_field[j][mx - 1].xx[nc];
+                    // perm_field[j][i].xx[nc] =1.e-10;
                     phi_field[j][i].xx[nc] = 0.2;
                     phi_old_field[j][i].xx[nc] = 0.2;
                 }
             }
             if (j < 0)
             {
-                // perm_field_local[j][i].xx[0] = perm_field_local[0][i].xx[0];
                 for (int nc = 0; nc < DOF_perm; nc++)
                 {
-                    perm_field[j][i].xx[nc] = 1.e-10;
+                    perm_field[j][i].xx[nc] = perm_field[0][i].xx[nc];
+                    // perm_field[j][i].xx[nc] = 1.e-10;
                     phi_field[j][i].xx[nc] = 0.2;
                     phi_old_field[j][i].xx[nc] = 0.2;
                 }
             }
             if (j > (my - 1))
             {
-                // perm_field_local[j][i].xx[0] = perm_field_local[my - 1][i].xx[0];
                 for (int nc = 0; nc < DOF_perm; nc++)
                 {
-                    perm_field[j][i].xx[nc] = 1.e-10;
+                    perm_field[j][i].xx[nc] = perm_field[my - 1][i].xx[nc];
+                    // perm_field[j][i].xx[nc] = 1.e-10;
                     phi_field[j][i].xx[nc] = 0.2;
                     phi_old_field[j][i].xx[nc] = 0.2;
                 }
