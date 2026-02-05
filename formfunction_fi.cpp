@@ -18,9 +18,13 @@ double qn[DOF_reaction] = {0, 0, 0, 0};
 #endif
 PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, PhysicalField **f, void *ptr)
 {
+    PetscErrorCode ierr;
     UserCtx *user = (UserCtx *)ptr;
     TstepCtx *tsctx = user->tsctx;
     PetscInt xints, xinte, yints, yinte, i, j, nc, mx, my;
+    PetscInt gxints, gxinte, gyints, gyinte;
+    DM dm = info->da;
+    DM perm_dm = NULL, secondary_dm = NULL, reaction_dm = NULL;
     PetscScalar alpha[DOF_reaction];
     PetscScalar diff, U_L, U_R, U_B, U_T;
     PetscScalar fluxL, fluxR, fluxB, fluxT;
@@ -36,6 +40,125 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
     xinte = info->xs + info->xm;
     yints = info->ys;
     yinte = info->ys + info->ym;
+    gxints = info->gxs;
+    gxinte = info->gxs + info->gxm;
+    gyints = info->gys;
+    gyinte = info->gys + info->gym;
+    Vec perm_local = NULL, phi_local = NULL, phi_old_local = NULL;
+    Vec eqm_k = NULL, sec_conc_old = NULL;
+    Vec mass_frac_old = NULL, initial_ref = NULL;
+    Vec xold = NULL;
+    PermField **perm_field = NULL, **phi_field = NULL, **phi_old_field = NULL;
+    SecondaryReactionField **eqm_k_field = NULL, **sec_conc_old_field = NULL;
+    ReactionField **mass_frac_old_field = NULL, **initial_ref_field = NULL;
+    PhysicalField **xold_field = NULL;
+
+    ierr = PetscObjectQuery((PetscObject)dm, "perm_dm",
+                            (PetscObject *)&perm_dm);
+    CHKERRQ(ierr);
+    ierr = PetscObjectQuery((PetscObject)dm, "secondary_dm",
+                            (PetscObject *)&secondary_dm);
+    CHKERRQ(ierr);
+    ierr = PetscObjectQuery((PetscObject)dm, "reaction_dm",
+                            (PetscObject *)&reaction_dm);
+    CHKERRQ(ierr);
+    if (!perm_dm || !secondary_dm || !reaction_dm)
+    {
+        SETERRQ(PetscObjectComm((PetscObject)dm), PETSC_ERR_ARG_WRONGSTATE,
+                "subdm coefficient DMs are not set up");
+    }
+    ierr = DMGetNamedLocalVector(perm_dm, "perm", &perm_local);
+    CHKERRQ(ierr);
+    ierr = DMGetNamedLocalVector(perm_dm, "phi", &phi_local);
+    CHKERRQ(ierr);
+    ierr = DMGetNamedLocalVector(perm_dm, "phi_old", &phi_old_local);
+    CHKERRQ(ierr);
+    ierr = DMDAVecGetArrayRead(perm_dm, perm_local, &perm_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecGetArrayRead(perm_dm, phi_local, &phi_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecGetArrayRead(perm_dm, phi_old_local, &phi_old_field);
+    CHKERRQ(ierr);
+
+
+    for (j = gyints; j < gyinte; j++)
+    {
+        for (i = gxints; i < gxinte; i++)
+        {
+    // 对perm_field, phi_field, phi_old_field 的外区赋值.
+            if (i < 0)
+            {
+                // perm_field_local[j][i].xx[0] = perm_field_local[j][0].xx[0];
+                for (int nc = 0; nc < DOF_perm; nc++)
+                {
+                    perm_field[j][i].xx[nc] =1.e-10;
+                    phi_field[j][i].xx[nc] = 0.2;
+                    phi_old_field[j][i].xx[nc] = 0.2;
+                }
+            }
+            if (i > (mx - 1))
+            {
+                // perm_field_local[j][i].xx[0] = perm_field_local[j][mx - 1].xx[0];
+                for (int nc = 0; nc < DOF_perm; nc++)
+                {
+                    perm_field[j][i].xx[nc] =1.e-10;
+                    phi_field[j][i].xx[nc] = 0.2;
+                    phi_old_field[j][i].xx[nc] = 0.2;
+                }
+            }
+            if (j < 0)
+            {
+                // perm_field_local[j][i].xx[0] = perm_field_local[0][i].xx[0];
+                for (int nc = 0; nc < DOF_perm; nc++)
+                {
+                    perm_field[j][i].xx[nc] = 1.e-10;
+                    phi_field[j][i].xx[nc] = 0.2;
+                    phi_old_field[j][i].xx[nc] = 0.2;
+                }
+            }
+            if (j > (my - 1))
+            {
+                // perm_field_local[j][i].xx[0] = perm_field_local[my - 1][i].xx[0];
+                for (int nc = 0; nc < DOF_perm; nc++)
+                {
+                    perm_field[j][i].xx[nc] = 1.e-10;
+                    phi_field[j][i].xx[nc] = 0.2;
+                    phi_old_field[j][i].xx[nc] = 0.2;
+                }
+            }
+        }
+    }
+
+
+    ierr = DMGetNamedGlobalVector(secondary_dm, "eqm_k", &eqm_k);
+    CHKERRQ(ierr);
+    ierr =
+        DMGetNamedGlobalVector(secondary_dm, "sec_conc_old",
+                                &sec_conc_old);
+    CHKERRQ(ierr);
+    ierr = DMDAVecGetArrayRead(secondary_dm, eqm_k, &eqm_k_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecGetArrayRead(secondary_dm, sec_conc_old,
+                                &sec_conc_old_field);
+    CHKERRQ(ierr);
+    ierr = DMGetNamedGlobalVector(reaction_dm, "mass_frac_old",
+                                    &mass_frac_old);
+    CHKERRQ(ierr);
+    ierr =
+        DMGetNamedGlobalVector(reaction_dm, "initial_ref",
+                                &initial_ref);
+    CHKERRQ(ierr);
+    ierr = DMDAVecGetArrayRead(reaction_dm, mass_frac_old,
+                                &mass_frac_old_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecGetArrayRead(reaction_dm, initial_ref,
+                                &initial_ref_field);
+    CHKERRQ(ierr);
+    ierr = DMGetNamedGlobalVector(dm, "xold", &xold);
+    CHKERRQ(ierr);
+    ierr = DMDAVecGetArrayRead(dm, xold, &xold_field);
+    CHKERRQ(ierr);
+
 #if EXAMPLE == 1||EXAMPLE==3
 #define conc_1(i, j) (1)
 #define diffusivity(i, j) (0)
@@ -43,13 +166,22 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
 #define conc_1(i, j) (2.e-4)
 #define diffusivity(i, j) (1.e-7)
 #endif
-#define K1_xx(i, j) ((user->perm_field[j][i].xx[0]) / (mu))
-#define K1_yy(i, j) ((user->perm_field[j][i].xx[1]) / (mu))
-
+#define K1_xx(i, j) ((perm_field[j][i].xx[0]) / (mu))
+#define K1_yy(i, j) ((perm_field[j][i].xx[1]) / (mu))
+//#define K1_xx(i, j) ((1.e-10) / (mu))
+//#define K1_yy(i, j) ((1.e-10) / (mu))
+#if EXAMPLE == 1||EXAMPLE == 3
+#define RHO_OLD(i, j)                                                \
+    (rho_init * PetscExpReal(xold_field[j][i].pw / _bulk_modulus -          \
+                             _thermal_expansion * temp_ref))
+#elif EXAMPLE == 2
+#define RHO_OLD(i, j) (rho_init)
+#endif
     for (j = yints; j < yinte; j++)
     {
         for (i = xints; i < xinte; i++)
         {
+
             double x_loc = (i + 0.5) * dx;
             PhysicalField x_center = x[j][i];
             PhysicalField x_left, x_right, x_bottom, x_top;
@@ -133,26 +265,26 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
                 _sec_conc_top, _sec_conc;
 
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
-                &_sec_conc_left, &user->eqm_k_field[j][i],
+                &_sec_conc_left, &eqm_k_field[j][i],
                 &_mass_frac_left, &x_left, _equilibrium_constants_as_log10,
                 user,tsctx->tcurr);
 
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
-                &_sec_conc_right, &user->eqm_k_field[j][i],
+                &_sec_conc_right, &eqm_k_field[j][i],
                 &_mass_frac_right, &x_right, _equilibrium_constants_as_log10,
                 user,tsctx->tcurr);
 
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
-                &_sec_conc, &user->eqm_k_field[j][i], &_mass_frac,
+                &_sec_conc, &eqm_k_field[j][i], &_mass_frac,
                 &x_center, _equilibrium_constants_as_log10, user,tsctx->tcurr);
 
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
-                &_sec_conc_bottom, &user->eqm_k_field[j][i],
+                &_sec_conc_bottom, &eqm_k_field[j][i],
                 &_mass_frac_bottom, &x_bottom, _equilibrium_constants_as_log10,
                 user,tsctx->tcurr);
 
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
-                &_sec_conc_top, &user->eqm_k_field[j][i], &_mass_frac_top,
+                &_sec_conc_top, &eqm_k_field[j][i], &_mass_frac_top,
                 &x_top, _equilibrium_constants_as_log10, user,tsctx->tcurr);
             
 
@@ -162,14 +294,14 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
 #if EXAMPLE == 1||EXAMPLE==3
             PorousFlowAqueousPreDisChemistry_computeQpReactionRates(
                 reference_temperature_pre, reference_saturation,
-                user->phi_old_field[j][i].xx[0], &user->phi_field[j][i].xx[0], &_mineral_sat,
-                &_reaction_rate, &user->_sec_conc_old_field[j][i], &_sec_conc,
-                _equilibrium_constants_as_log10, user, &user->initial_ref_field[j][i]);
+                phi_old_field[j][i].xx[0], &phi_field[j][i].xx[0], &_mineral_sat,
+                &_reaction_rate, &sec_conc_old_field[j][i], &_sec_conc,
+                _equilibrium_constants_as_log10, user, &initial_ref_field[j][i]);
 #endif
 
             diff = 0.5 * (dx / (K1_xx(i - 1, j)) + dx / (K1_xx(i, j)));
             U_L = -conc_1(i, j) * ((x_center.pw - x_left.pw)) / diff;
-
+        
             diff = 0.5 * (dx / (K1_xx(i + 1, j)) + dx / (K1_xx(i, j)));
             U_R = -conc_1(i, j) * ((x_right.pw - x_center.pw)) / diff;
 
@@ -186,7 +318,6 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
             fluxB = rho(i, j - 1) * max(U_B, 0.0) + rho(i, j) * min(U_B, 0.0);
 
             fluxT = rho(i, j + 1) * min(U_T, 0.0) + rho(i, j) * max(U_T, 0.0); //
-
             for (nc = 0; nc < DOF_reaction; ++nc)
             {
                 fluxL1 = _mass_frac_left.reaction[nc] * rho(i - 1, j) *
@@ -206,15 +337,16 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
                          _mass_frac.reaction[nc] * rho(i, j) * max(U_T, 0.0);
                 fluxT2 = diffusivity(i, j) * (_mass_frac_top.reaction[nc] - _mass_frac.reaction[nc]) / dy;
                 alpha[nc] =
-                    (rho(i, j) * user->phi_field[j][i].xx[0] * _mass_frac.reaction[nc] -
-                     rho_old(i, j) * user->phi_old_field[j][i].xx[0] *
-                         user->_mass_frac_old_field[j][i].reaction[nc]) /
+                    (rho(i, j) * phi_field[j][i].xx[0] * _mass_frac.reaction[nc] -
+                     RHO_OLD(i, j)  * phi_old_field[j][i].xx[0] *
+                         mass_frac_old_field[j][i].reaction[nc]) /
                     tsctx->tsize;
+             
 #if EXAMPLE==1||EXAMPLE==3
                 for (int q = 0; q < (DOF - DOF_reaction); ++q)
                 {
                     qn[nc] = stoichiometry[nc] * _mineral_density[nc] *
-                             _reaction_rate.reaction[q] * user->phi_field[j][i].xx[0];
+                             _reaction_rate.reaction[q] * phi_field[j][i].xx[0];
                 
                 }
 #endif  
@@ -236,13 +368,51 @@ if(nc==2){
             f[j][i].pw = x[j][i].pw - (60 - 50 * x_loc);
 #elif EXAMPLE==3
             double alpha1=0;
-           alpha1 = (rho(i, j) * user->phi_field[j][i].xx[0] -
-                    rho_old(i, j) * user->phi_old_field[j][i].xx[0]) /
+           alpha1 = (rho(i, j) * phi_field[j][i].xx[0] -
+                    RHO_OLD(i, j)  * phi_old_field[j][i].xx[0]) /
                     tsctx->tsize;
             f[j][i].pw = alpha1+(fluxR - fluxL) / dx + (fluxT - fluxB) / dy;
 #endif
         }
     }
+     ierr = DMDAVecRestoreArrayRead(perm_dm, perm_local, &perm_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArrayRead(perm_dm, phi_local, &phi_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArrayRead(perm_dm, phi_old_local, &phi_old_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArrayRead(secondary_dm, eqm_k, &eqm_k_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArrayRead(secondary_dm, sec_conc_old,
+                                   &sec_conc_old_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArrayRead(reaction_dm, mass_frac_old,
+                                   &mass_frac_old_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArrayRead(reaction_dm, initial_ref,
+                                   &initial_ref_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArrayRead(dm, xold, &xold_field);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedLocalVector(perm_dm, "perm", &perm_local);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedLocalVector(perm_dm, "phi", &phi_local);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedLocalVector(perm_dm, "phi_old", &phi_old_local);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedGlobalVector(secondary_dm, "eqm_k", &eqm_k);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedGlobalVector(secondary_dm, "sec_conc_old",
+                                     &sec_conc_old);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedGlobalVector(reaction_dm, "mass_frac_old",
+                                     &mass_frac_old);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedGlobalVector(reaction_dm, "initial_ref",
+                                     &initial_ref);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedGlobalVector(dm, "xold", &xold);
+    CHKERRQ(ierr);
     PetscCall(PetscLogFlops(84.0 * info->ym * info->xm));
     PetscFunctionReturn(PETSC_SUCCESS);
 }

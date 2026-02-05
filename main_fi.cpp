@@ -2,26 +2,176 @@ static char help[] = "3D single-phase flow, by TianpeiCheng .\n\\n";
 #include <petscdm.h>
 #include <petscdmda.h>
 #include <petscsnes.h>
+#include <iostream>
 #include "def.h"
 #include "petscsys.h"
 #include "petsctime.h"
 #include "reaction.h"
 #include "stdlib.h"
-#include <iostream>
 MPI_Comm comm;
 PetscMPIInt rank, size;
+
+static PetscErrorCode ScatterNamedToSubDMLocal(DM dm, DM subdm,
+                                               const char* name) {
+    Vec g, l;
+    VecScatter *iscat = NULL, *oscat = NULL, *gscat = NULL;
+    PetscFunctionBeginUser;
+    PetscCall(DMGetNamedGlobalVector(dm, name, &g));
+    PetscCall(DMGetNamedLocalVector(subdm, name, &l));
+    PetscCall(DMCreateDomainDecompositionScatters(dm, 1, &subdm, &iscat, &oscat,
+                                                  &gscat));
+    PetscCall(VecScatterBegin(*gscat, g, l, INSERT_VALUES, SCATTER_FORWARD));
+    PetscCall(VecScatterEnd(*gscat, g, l, INSERT_VALUES, SCATTER_FORWARD));
+    // PetscCall(VecScatterDestroy(iscat));
+    // PetscCall(VecScatterDestroy(oscat));
+    // PetscCall(VecScatterDestroy(gscat));
+    PetscCall(DMRestoreNamedGlobalVector(dm, name, &g));
+    PetscCall(DMRestoreNamedLocalVector(subdm, name, &l));
+    PetscFunctionReturn(0);
+}
+
+static PetscErrorCode ScatterNamedToSubDMGlobal(DM dm, DM subdm,
+                                                const char* name) {
+    Vec g, l;
+    VecScatter *iscat = NULL, *oscat = NULL, *gscat = NULL;
+    PetscFunctionBeginUser;
+    PetscCall(DMGetNamedGlobalVector(dm, name, &g));
+    PetscCall(DMGetNamedGlobalVector(subdm, name, &l));
+    PetscCall(DMCreateDomainDecompositionScatters(dm, 1, &subdm, &iscat, &oscat,
+                                                  &gscat));
+    PetscCall(VecScatterBegin(*oscat, g, l, INSERT_VALUES, SCATTER_FORWARD));
+    PetscCall(VecScatterEnd(*oscat, g, l, INSERT_VALUES, SCATTER_FORWARD));
+    // PetscCall(VecScatterDestroy(iscat));
+    // PetscCall(VecScatterDestroy(oscat));
+    // PetscCall(VecScatterDestroy(gscat));
+    PetscCall(DMRestoreNamedGlobalVector(dm, name, &g));
+    PetscCall(DMRestoreNamedGlobalVector(subdm, name, &l));
+    PetscFunctionReturn(0);
+}
+
+static PetscErrorCode CoefficientSubDomainHook(DM dm, DM subdm, void* ctx) {
+    DM perm_dm = NULL, secondary_dm = NULL, reaction_dm = NULL;
+#if EXAMPLE == 2
+    DM mineral_dm = NULL;
+#endif
+    PetscFunctionBeginUser;
+    PetscCall(
+        PetscObjectQuery((PetscObject)dm, "perm_dm", (PetscObject*)&perm_dm));
+    if (perm_dm) {
+        PetscInt dof = 0;
+        DM perm_subdm = NULL;
+        PetscCall(PetscObjectQuery((PetscObject)subdm, "perm_dm",
+                                   (PetscObject*)&perm_subdm));
+        if (!perm_subdm) {
+            PetscCall(DMDAGetInfo(perm_dm, PETSC_NULLPTR, PETSC_NULLPTR,
+                                  PETSC_NULLPTR, PETSC_NULLPTR, PETSC_NULLPTR,
+                                  PETSC_NULLPTR, PETSC_NULLPTR, &dof,
+                                  PETSC_NULLPTR, PETSC_NULLPTR, PETSC_NULLPTR,
+                                  PETSC_NULLPTR, PETSC_NULLPTR));
+            PetscCall(DMDACreateCompatibleDMDA(subdm, dof, &perm_subdm));
+            PetscCall(PetscObjectCompose((PetscObject)subdm, "perm_dm",
+                                         (PetscObject)perm_subdm));
+        }
+        PetscCall(ScatterNamedToSubDMGlobal(perm_dm, perm_subdm, "perm"));
+        PetscCall(ScatterNamedToSubDMGlobal(perm_dm, perm_subdm, "phi"));
+        PetscCall(ScatterNamedToSubDMGlobal(perm_dm, perm_subdm, "phi_old"));
+        PetscCall(ScatterNamedToSubDMLocal(perm_dm, perm_subdm, "perm"));
+        PetscCall(ScatterNamedToSubDMLocal(perm_dm, perm_subdm, "phi"));
+        PetscCall(ScatterNamedToSubDMLocal(perm_dm, perm_subdm, "phi_old"));
+        // PetscCall(DMDestroy(&perm_subdm));
+    }
+    PetscCall(PetscObjectQuery((PetscObject)dm, "secondary_dm",
+                               (PetscObject*)&secondary_dm));
+    if (secondary_dm) {
+        PetscInt dof = 0;
+        DM secondary_subdm = NULL;
+        PetscCall(PetscObjectQuery((PetscObject)subdm, "secondary_dm",
+                                   (PetscObject*)&secondary_subdm));
+        if (!secondary_subdm) {
+            PetscCall(DMDAGetInfo(secondary_dm, PETSC_NULLPTR, PETSC_NULLPTR,
+                                  PETSC_NULLPTR, PETSC_NULLPTR, PETSC_NULLPTR,
+                                  PETSC_NULLPTR, PETSC_NULLPTR, &dof,
+                                  PETSC_NULLPTR, PETSC_NULLPTR, PETSC_NULLPTR,
+                                  PETSC_NULLPTR, PETSC_NULLPTR));
+            PetscCall(DMDACreateCompatibleDMDA(subdm, dof, &secondary_subdm));
+            PetscCall(PetscObjectCompose((PetscObject)subdm, "secondary_dm",
+                                         (PetscObject)secondary_subdm));
+        }
+        PetscCall(
+            ScatterNamedToSubDMGlobal(secondary_dm, secondary_subdm, "eqm_k"));
+        PetscCall(ScatterNamedToSubDMGlobal(secondary_dm, secondary_subdm,
+                                            "sec_conc_old"));
+        // PetscCall(DMDestroy(&secondary_subdm));
+    }
+    PetscCall(PetscObjectQuery((PetscObject)dm, "reaction_dm",
+                               (PetscObject*)&reaction_dm));
+    if (reaction_dm) {
+        PetscInt dof = 0;
+        DM reaction_subdm = NULL;
+        PetscCall(PetscObjectQuery((PetscObject)subdm, "reaction_dm",
+                                   (PetscObject*)&reaction_subdm));
+        if (!reaction_subdm) {
+            PetscCall(DMDAGetInfo(reaction_dm, PETSC_NULLPTR, PETSC_NULLPTR,
+                                  PETSC_NULLPTR, PETSC_NULLPTR, PETSC_NULLPTR,
+                                  PETSC_NULLPTR, PETSC_NULLPTR, &dof,
+                                  PETSC_NULLPTR, PETSC_NULLPTR, PETSC_NULLPTR,
+                                  PETSC_NULLPTR, PETSC_NULLPTR));
+            PetscCall(DMDACreateCompatibleDMDA(subdm, dof, &reaction_subdm));
+            PetscCall(PetscObjectCompose((PetscObject)subdm, "reaction_dm",
+                                         (PetscObject)reaction_subdm));
+        }
+        PetscCall(ScatterNamedToSubDMGlobal(reaction_dm, reaction_subdm,
+                                            "mass_frac_old"));
+        PetscCall(ScatterNamedToSubDMGlobal(reaction_dm, reaction_subdm,
+                                            "initial_ref"));
+        // PetscCall(DMDestroy(&reaction_subdm));
+    }
+#if EXAMPLE == 2
+    ierr = PetscObjectQuery((PetscObject)dm, "mineral_dm",
+                            (PetscObject*)&mineral_dm);
+    CHKERRQ(ierr);
+    if (mineral_dm) {
+        PetscInt dof = 0;
+        DM mineral_subdm = NULL;
+        ierr =
+            DMDAGetInfo(mineral_dm, PETSC_NULLPTR, PETSC_NULLPTR, PETSC_NULLPTR,
+                        PETSC_NULLPTR, PETSC_NULLPTR, PETSC_NULLPTR,
+                        PETSC_NULLPTR, &dof, PETSC_NULLPTR, PETSC_NULLPTR,
+                        PETSC_NULLPTR, PETSC_NULLPTR, PETSC_NULLPTR);
+        CHKERRQ(ierr);
+        ierr = DMDACreateCompatibleDMDA(subdm, dof, &mineral_subdm);
+        CHKERRQ(ierr);
+        ierr = PetscObjectCompose((PetscObject)subdm, "mineral_dm",
+                                  (PetscObject)mineral_subdm);
+        CHKERRQ(ierr);
+        ierr = ScatterNamedToSubDMGlobal(mineral_dm, mineral_subdm,
+                                         "eqm_k_mineral");
+        CHKERRQ(ierr);
+        ierr = DMDestroy(&mineral_subdm);
+        CHKERRQ(ierr);
+    }
+#endif
+    PetscCall(ScatterNamedToSubDMGlobal(dm, subdm, "xold"));
+    PetscFunctionReturn(0);
+}
+PetscErrorCode CoefficientRestrictHook(DM global, VecScatter out, VecScatter in,
+                                       DM block, void* ctx) {
+    PetscFunctionBeginUser;
+    PetscCall(CoefficientSubDomainHook(global, block, ctx));
+    PetscFunctionReturn(0);
+}
+
 #undef __FUNCT__
 #define __FUNCT__ "main"
-int main(int argc, char **argv)
-{
+int main(int argc, char** argv) {
     PetscErrorCode ierr;
     SNES snes;
-    UserCtx *user;
+    UserCtx* user;
     PetscInt n1, n2, n3;
     ParaCtx param;
     TstepCtx tsctx;
 
-    PetscInitialize(&argc, &argv, (char *)0, help);
+    PetscInitialize(&argc, &argv, (char*)0, help);
 
     PetscPreLoadBegin(PETSC_TRUE, "SetUp");
 
@@ -39,8 +189,7 @@ int main(int argc, char **argv)
     tsctx.smax = Smax;
     PetscOptionsHasName(PETSC_NULLPTR, PETSC_NULLPTR, "-p",
                         &param.use_adaptive_dt);
-    if (param.use_adaptive_dt)
-    {
+    if (param.use_adaptive_dt) {
         ierr = PetscOptionsGetScalar(PETSC_NULLPTR, PETSC_NULLPTR, "-p",
                                      &tsctx.p, PETSC_NULLPTR);
         CHKERRQ(ierr);
@@ -88,16 +237,14 @@ int main(int argc, char **argv)
     ierr = PetscOptionsGetInt(PETSC_NULLPTR, PETSC_NULLPTR, "-tsstart",
                               &tsctx.tsstart, PETSC_NULLPTR);
     CHKERRQ(ierr);
-    if (tsctx.tsstart < 0)
-        tsctx.tsstart = 0;
+    if (tsctx.tsstart < 0) tsctx.tsstart = 0;
     tsctx.tscurr = tsctx.tsstart;
     tsctx.tsback = -1;
     ierr = PetscOptionsGetInt(PETSC_NULLPTR, PETSC_NULLPTR, "-tsback",
                               &tsctx.tsback, PETSC_NULLPTR);
     CHKERRQ(ierr);
 
-    if (tsctx.tsback > tsctx.tsmax)
-        tsctx.tsback = -1;
+    if (tsctx.tsback > tsctx.tsmax) tsctx.tsback = -1;
     n1 = N1;
     n2 = N2;
     ierr = PetscOptionsGetInt(PETSC_NULLPTR, PETSC_NULLPTR, "-n1", &n1,
@@ -114,224 +261,148 @@ int main(int argc, char **argv)
        Create user context, set problem data, create vector data structures.
        Also, compute the initial guess.
        - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
-    ierr = PetscMalloc(sizeof(UserCtx), &user);
-    CHKERRQ(ierr);
+    PetscCall(PetscMalloc(sizeof(UserCtx), &user));
 
-    ierr = SNESCreate(comm, &snes);
-    CHKERRQ(ierr);
+    PetscCall(SNESCreate(comm, &snes));
 
-    ierr = DMDACreate2d(comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED,
-                        DMDA_STENCIL_STAR, n1, n2, PETSC_DECIDE, PETSC_DECIDE,
-                        DOF, WIDTH, 0, 0, &(user->da));
-    CHKERRQ(ierr);
-    ierr = DMDACreate2d(comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED,
-                        DMDA_STENCIL_STAR, n1, n2, PETSC_DECIDE, PETSC_DECIDE,
-                        DOF_reaction, WIDTH, 0, 0, &(user->da_reaction));
-    CHKERRQ(ierr);
-    ierr = DMDACreate2d(comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED,
-                        DMDA_STENCIL_STAR, n1, n2, PETSC_DECIDE, PETSC_DECIDE,
-                        DOF_perm, WIDTH, 0, 0, &(user->da_perm));
-    CHKERRQ(ierr);
-    ierr = DMDACreate2d(comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED,
-                        DMDA_STENCIL_STAR, n1, n2, PETSC_DECIDE, PETSC_DECIDE,
-                        DOF_Secondary, WIDTH, 0, 0, &(user->da_secondary));
-    CHKERRQ(ierr);
-    if (DOF_mineral != 0)
-    {
-        ierr = DMDACreate2d(comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED,
-                            DMDA_STENCIL_STAR, n1, n2, PETSC_DECIDE, PETSC_DECIDE,
-                            DOF_mineral, WIDTH, 0, 0, &(user->da_mineral));
-        CHKERRQ(ierr);
+    PetscCall(DMDACreate2d(comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED,
+                           DMDA_STENCIL_STAR, n1, n2, PETSC_DECIDE,
+                           PETSC_DECIDE, DOF, WIDTH, 0, 0, &(user->da)));
+    PetscCall(DMDACreate2d(comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED,
+                           DMDA_STENCIL_STAR, n1, n2, PETSC_DECIDE,
+                           PETSC_DECIDE, DOF_reaction, WIDTH, 0, 0,
+                           &(user->da_reaction)));
+    PetscCall(DMDACreate2d(comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED,
+                           DMDA_STENCIL_STAR, n1, n2, PETSC_DECIDE,
+                           PETSC_DECIDE, DOF_perm, WIDTH, 0, 0,
+                           &(user->da_perm)));
+    PetscCall(DMDACreate2d(comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED,
+                           DMDA_STENCIL_STAR, n1, n2, PETSC_DECIDE,
+                           PETSC_DECIDE, DOF_Secondary, WIDTH, 0, 0,
+                           &(user->da_secondary)));
+    if (DOF_mineral != 0) {
+        PetscCall(DMDACreate2d(comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED,
+                               DMDA_STENCIL_STAR, n1, n2, PETSC_DECIDE,
+                               PETSC_DECIDE, DOF_mineral, WIDTH, 0, 0,
+                               &(user->da_mineral)));
     }
-    ierr = DMSetFromOptions(user->da);
-    CHKERRQ(ierr);
-    ierr = DMSetUp(user->da);
-    CHKERRQ(ierr);
-    ierr = DMSetUp(user->da_reaction);
-    CHKERRQ(ierr);
-    ierr = DMSetUp(user->da_perm);
-    CHKERRQ(ierr);
-    ierr = DMSetUp(user->da_secondary);
-    CHKERRQ(ierr);
+    PetscCall(DMSetFromOptions(user->da));
+    PetscCall(DMSetFromOptions(user->da_reaction));
+    PetscCall(DMSetFromOptions(user->da_perm));
+    PetscCall(DMSetFromOptions(user->da_secondary));
+    PetscCall(DMSetUp(user->da));
+    PetscCall(DMSetUp(user->da_reaction));
+    PetscCall(DMSetUp(user->da_perm));
+    PetscCall(DMSetUp(user->da_secondary));
 #if EXAMPLE == 2
-    ierr = DMSetUp(user->da_mineral);
-    CHKERRQ(ierr);
+    PetscCall(DMSetUp(user->da_mineral));
+#endif
+    PetscCall(PetscObjectCompose((PetscObject)user->da, "perm_dm",
+                                 (PetscObject)user->da_perm));
+    PetscCall(PetscObjectCompose((PetscObject)user->da, "secondary_dm",
+                                 (PetscObject)user->da_secondary));
+    PetscCall(PetscObjectCompose((PetscObject)user->da, "reaction_dm",
+                                 (PetscObject)user->da_reaction));
+#if EXAMPLE == 2
+    PetscCall(PetscObjectCompose((PetscObject)user->da, "mineral_dm",
+                                 (PetscObject)user->da_mineral));
 #endif
 #if EXAMPLE == 1 || EXAMPLE == 3
-    ierr = DMDASetFieldName(user->da, 0, "pressure");
-    CHKERRQ(ierr);
-    ierr = DMDASetFieldName(user->da, 1, "h+");
-    CHKERRQ(ierr);
-    ierr = DMDASetFieldName(user->da, 2, "hco3-");
-    CHKERRQ(ierr);
-    ierr = DMDASetFieldName(user->da, 3, "ca2+");
-    CHKERRQ(ierr);
-    ierr = DMDASetFieldName(user->da, 4, "mg2+");
-    CHKERRQ(ierr);
-    ierr = DMDASetFieldName(user->da, 5, "fe2+");
-    CHKERRQ(ierr);
+    PetscCall(DMDASetFieldName(user->da, 0, "pressure"));
+    PetscCall(DMDASetFieldName(user->da, 1, "h+"));
+    PetscCall(DMDASetFieldName(user->da, 2, "hco3-"));
+    PetscCall(DMDASetFieldName(user->da, 3, "ca2+"));
+    PetscCall(DMDASetFieldName(user->da, 4, "mg2+"));
+    PetscCall(DMDASetFieldName(user->da, 5, "fe2+"));
 #elif EXAMPLE == 2
-    ierr = DMDASetFieldName(user->da, 0, "pressure");
-    CHKERRQ(ierr);
-    ierr = DMDASetFieldName(user->da, 1, "tracer");
-    CHKERRQ(ierr);
-    ierr = DMDASetFieldName(user->da, 2, "hco3-");
-    CHKERRQ(ierr);
-    ierr = DMDASetFieldName(user->da, 3, "h+");
-    CHKERRQ(ierr);
-    ierr = DMDASetFieldName(user->da, 4, "ca2+");
-    CHKERRQ(ierr);
+    PetscCall(DMDASetFieldName(user->da, 0, "pressure"));
+    PetscCall(DMDASetFieldName(user->da, 1, "tracer"));
+    PetscCall(DMDASetFieldName(user->da, 2, "hco3-"));
+    PetscCall(DMDASetFieldName(user->da, 3, "h+"));
+    PetscCall(DMDASetFieldName(user->da, 4, "ca2+"));
 #endif
-    ierr = SNESSetDM(snes, user->da);
-    CHKERRQ(ierr);
-    ierr = SNESSetFromOptions(snes);
-    CHKERRQ(ierr);
+    PetscCall(SNESSetDM(snes, user->da));
+    PetscCall(SNESSetFromOptions(snes));
+    PetscCall(DMSubDomainHookAdd(user->da, CoefficientSubDomainHook,
+                                 CoefficientRestrictHook, NULL));
     user->tsctx = &tsctx;
     user->param = &param;
-    ierr = DMDAGetInfo(user->da, 0, &(user->n1), &(user->n2), 0, 0, 0, 0, 0, 0,
-                       0, 0, 0, 0);
-    CHKERRQ(ierr);
+    PetscCall(DMDAGetInfo(user->da, 0, &(user->n1), &(user->n2), 0, 0, 0, 0, 0,
+                          0, 0, 0, 0, 0));
     user->dx = L1 / (PetscScalar)(user->n1);
     user->dy = L2 / (PetscScalar)(user->n2);
 
-    ierr = DMCreateGlobalVector(user->da, &user->sol);
+    PetscCall(DMCreateGlobalVector(user->da, &user->sol));
+    PetscCall(DMGetNamedGlobalVector(user->da, "solution", &user->sol));
+    PetscCall(DMGetNamedGlobalVector(user->da, "residual", &user->myF));
 #if EXAMPLE == 2
-    ierr = DMCreateGlobalVector(user->da_mineral, &user->sol_mineral);
-    ierr = DMCreateGlobalVector(user->da_mineral, &user->sol_mineral_old);
+    PetscCall(DMGetNamedGlobalVector(user->da_mineral, "sol_mineral",
+                                     &user->sol_mineral));
+    PetscCall(DMGetNamedGlobalVector(user->da_mineral, "sol_mineral_old",
+                                     &user->sol_mineral_old));
 #endif
-    ierr = VecDuplicate(user->sol, &(user->myF));
-    CHKERRQ(ierr);
-    ierr = DMDAGetArray(user->da_perm, PETSC_TRUE, (void **)&(user->phi_field));
-    CHKERRQ(ierr);
-    ierr =
-        DMDAGetArray(user->da_perm, PETSC_TRUE, (void **)&(user->phi_old_field));
-    CHKERRQ(ierr);
-    ierr = DMDAGetArray(user->da_perm, PETSC_TRUE, (void **)&(user->perm_field));
-    CHKERRQ(ierr);
-    ierr = DMDAGetArray(user->da_secondary, PETSC_TRUE,
-                        (void **)&(user->_sec_conc_old_field));
-    CHKERRQ(ierr);
-    ierr = DMDAGetArray(user->da_secondary, PETSC_TRUE,
-                        (void **)&(user->eqm_k_field));
-    CHKERRQ(ierr);
-    ierr = DMDAGetArray(user->da_reaction, PETSC_TRUE,
-                        (void **)&(user->_mass_frac_old_field));
-    CHKERRQ(ierr);
-    ierr = DMDAGetArray(user->da_reaction, PETSC_TRUE,
-                        (void **)&(user->initial_ref_field));
-    CHKERRQ(ierr);
-    ierr = DMDAGetArray(user->da, PETSC_FALSE, (void **)&(user->xold));
-    CHKERRQ(ierr);
 #if EXAMPLE == 2
-    ierr = DMDAGetArray(user->da_mineral, PETSC_TRUE, (void **)&(user->eqm_k_mineral_field));
+    ierr = DMDAGetArray(user->da_mineral, PETSC_TRUE,
+                        (void**)&(user->eqm_k_mineral_field));
     CHKERRQ(ierr);
-
 #endif
-
-    ierr = DMDASNESSetFunctionLocal(
+    PetscCall(DMDASNESSetFunctionLocal(
         user->da, INSERT_VALUES,
-        (PetscErrorCode (*)(DMDALocalInfo *, void *, void *,
-                            void *))FormFunctionLocal,
-        user);
-    ierr = FormInitialValue_local(user);
-    CHKERRQ(ierr);
-    ierr = FormInitialValue_Perm_local(user);
-    CHKERRQ(ierr);
-    ierr = FormInitialValue_Reaction_local(user);
-    CHKERRQ(ierr);
+        (PetscErrorCode (*)(DMDALocalInfo*, void*, void*,
+                            void*))FormFunctionLocal,
+        user));
+    PetscCall(FormInitialValue_local(user));
+    PetscCall(FormInitialValue_Perm_local(user));
+    PetscCall(FormInitialValue_Reaction_local(user));
     user->snes = snes;
-    if (!param.PetscPreLoading)
-    {
-        ierr = PetscPrintf(comm,
-                           "\n+++++++++++++++++++++++ Problem parameters "
-                           "+++++++++++++++++++++\n");
-        CHKERRQ(ierr);
-        ierr = PetscPrintf(comm, " Single-phase flow, example: %d\n", EXAMPLE);
-        CHKERRQ(ierr);
-        ierr = PetscPrintf(comm, " Problem size %d, %d, Ncpu = %d \n", n1, n2,
-                           size);
-        CHKERRQ(ierr);
-
-        if (param.use_adaptive_dt)
-        {
-            ierr = PetscPrintf(comm,
-                               " Torder = %d, TimeSteps = %g (adpt with %g) x "
-                               "%d, final time %f \n",
-                               tsctx.torder, tsctx.tsize, tsctx.p, tsctx.tsmax,
-                               tsctx.tfinal);
-            CHKERRQ(ierr);
-        }
-        else
-        {
-            ierr = PetscPrintf(
+    if (!param.PetscPreLoading) {
+        PetscCall(PetscPrintf(comm,
+                              "\n+++++++++++++++++++++++ Problem parameters "
+                              "+++++++++++++++++++++\n"));
+        PetscCall(
+            PetscPrintf(comm, " Single-phase flow, example: %d\n", EXAMPLE));
+        PetscCall(PetscPrintf(comm, " Problem size %d, %d, Ncpu = %d \n", n1,
+                              n2, size));
+        if (param.use_adaptive_dt) {
+            PetscCall(PetscPrintf(
+                comm,
+                " Torder = %d, TimeSteps = %g (adpt with %g) x "
+                "%d, final time %f \n",
+                tsctx.torder, tsctx.tsize, tsctx.p, tsctx.tsmax, tsctx.tfinal));
+        } else {
+            PetscCall(PetscPrintf(
                 comm, " Torder = %d, TimeSteps = %g x %d, final time %g \n",
-                tsctx.torder, tsctx.tsize, tsctx.tsmax, tsctx.tfinal);
-            CHKERRQ(ierr);
+                tsctx.torder, tsctx.tsize, tsctx.tsmax, tsctx.tfinal));
         }
-        ierr = PetscPrintf(comm,
-                           "+++++++++++++++++++++++++++++++++++++++++++++++++++"
-                           "+++++++++++++++\n");
-        CHKERRQ(ierr);
+        PetscCall(
+            PetscPrintf(comm,
+                        "+++++++++++++++++++++++++++++++++++++++++++++++++++"
+                        "+++++++++++++++\n"));
     }
 
     PetscPreLoadStage("Solve");
-    ierr = SNESSetFromOptions(snes);
-    CHKERRQ(ierr);
-    ierr = Update(user);
-    CHKERRQ(ierr);
+    PetscCall(SNESSetFromOptions(snes));
+    PetscCall(Update(user));
 
-    ierr = VecDestroy(&user->sol);
-    CHKERRQ(ierr);
 #if EXAMPLE == 2
-    ierr = VecDestroy(&user->sol_mineral);
-    CHKERRQ(ierr);
-    ierr = VecDestroy(&user->sol_mineral_old);
-    CHKERRQ(ierr);
+    PetscCall(DMRestoreNamedGlobalVector(user->da_mineral, "sol_mineral",
+                                         &user->sol_mineral));
+    PetscCall(DMRestoreNamedGlobalVector(user->da_mineral, "sol_mineral_old",
+                                         &user->sol_mineral_old));
 #endif
-    ierr = VecDestroy(&user->myF);
-    CHKERRQ(ierr);
+    PetscCall(DMRestoreNamedGlobalVector(user->da, "solution", &user->sol));
+    PetscCall(DMRestoreNamedGlobalVector(user->da, "residual", &user->myF));
+    PetscCall(DMDestroy(&user->da));
+    PetscCall(DMDestroy(&user->da_reaction));
+    PetscCall(DMDestroy(&user->da_perm));
+    PetscCall(DMDestroy(&user->da_secondary));
 #if EXAMPLE == 2
-    ierr = DMDARestoreArray(user->da_mineral, PETSC_TRUE, (void **)&(user->eqm_k_mineral_field));
-    CHKERRQ(ierr);
+    PetscCall(DMDestroy(&user->da_mineral));
 #endif
-    ierr =
-        DMDARestoreArray(user->da_perm, PETSC_TRUE, (void **)&(user->phi_field));
-    CHKERRQ(ierr);
-    ierr = DMDARestoreArray(user->da_perm, PETSC_TRUE,
-                            (void **)&(user->phi_old_field));
-    CHKERRQ(ierr);
-    ierr = DMDARestoreArray(user->da_perm, PETSC_TRUE,
-                            (void **)&(user->perm_field));
-    CHKERRQ(ierr);
-    ierr = DMDARestoreArray(user->da_secondary, PETSC_TRUE,
-                            (void **)&(user->_sec_conc_old_field));
-    CHKERRQ(ierr);
-    ierr = DMDARestoreArray(user->da_secondary, PETSC_TRUE,
-                            (void **)&(user->eqm_k_field));
-    CHKERRQ(ierr);
-    ierr = DMDARestoreArray(user->da_reaction, PETSC_TRUE,
-                            (void **)&(user->initial_ref_field));
-    ierr = DMDARestoreArray(user->da, PETSC_FALSE, (void **)&(user->xold));
-    CHKERRQ(ierr);
-    ierr = DMDestroy(&user->da);
-    CHKERRQ(ierr);
-    ierr = DMDestroy(&user->da_reaction);
-    CHKERRQ(ierr);
-    ierr = DMDestroy(&user->da_perm);
-    CHKERRQ(ierr);
-    ierr = DMDestroy(&user->da_secondary);
-    CHKERRQ(ierr);
-#if EXAMPLE == 2
-    ierr = DMDestroy(&user->da_mineral);
-    CHKERRQ(ierr);
-#endif
-    ierr = SNESDestroy(&snes);
-    CHKERRQ(ierr);
-    ierr = PetscFree(user);
-    CHKERRQ(ierr);
+    PetscCall(SNESDestroy(&snes));
+    PetscCall(PetscFree(user));
 
-    if (PetscPreLoading)
-    {
+    if (PetscPreLoading) {
         ierr = PetscPrintf(comm, " PetscPreLoading over!\n");
         CHKERRQ(ierr);
     }
@@ -344,12 +415,11 @@ int main(int argc, char **argv)
 
 #undef __FUNCT__
 #define __FUNCT__ "Update"
-PetscErrorCode Update(void *ptr)
-{
+PetscErrorCode Update(void* ptr) {
     PetscErrorCode ierr;
-    UserCtx *user = (UserCtx *)ptr;
-    ParaCtx *param = user->param;
-    TstepCtx *tsctx = user->tsctx;
+    UserCtx* user = (UserCtx*)ptr;
+    ParaCtx* param = user->param;
+    TstepCtx* tsctx = user->tsctx;
     SNES snes = user->snes;
     PetscInt max_steps;
     SNESConvergedReason reason;
@@ -357,21 +427,17 @@ PetscErrorCode Update(void *ptr)
     PetscScalar res = 0.0, res0 = 0.0, scaling = 0.0;
     double time0 = 0.0, time1 = 0.0, totaltime = 0.0;
     PetscScalar fnorm;
-    FILE *fp;
+    FILE* fp;
     char history[36], filename[PETSC_MAX_PATH_LEN - 1];
     PetscFunctionBegin;
 
-    if (param->PetscPreLoading)
-    {
+    if (param->PetscPreLoading) {
         max_steps = 1;
-    }
-    else
-    {
+    } else {
         max_steps = tsctx->tsmax;
     }
 
-    if (!param->PetscPreLoading)
-    {
+    if (!param->PetscPreLoading) {
         sprintf(history, "history_c%d_n%dx%d.data", size, user->n1, user->n2);
         ierr = PetscFOpen(comm, history, "a", &fp);
         CHKERRQ(ierr);
@@ -382,30 +448,22 @@ PetscErrorCode Update(void *ptr)
     }
 
     for (tsctx->tscurr = tsctx->tsstart + 1;
-         (tsctx->tscurr <= tsctx->tsstart + max_steps); tsctx->tscurr++)
-    {
+         (tsctx->tscurr <= tsctx->tsstart + max_steps); tsctx->tscurr++) {
         ierr = SNESComputeFunction(snes, user->sol, user->myF);
         CHKERRQ(ierr);
         ierr = VecNorm(user->myF, NORM_2, &res);
         CHKERRQ(ierr);
 
-        if (user->param->use_adaptive_dt)
-        {
-            if (tsctx->tscurr == tsctx->tsstart + 1)
-            {
+        if (user->param->use_adaptive_dt) {
+            if (tsctx->tscurr == tsctx->tsstart + 1) {
                 res0 = res;
-            }
-            else
-            {
+            } else {
                 scaling = pow(res0 / res, tsctx->p);
-                if (scaling > tsctx->smax)
-                    scaling = tsctx->smax;
-                if (scaling < 1. / tsctx->smax)
-                    scaling = 1. / tsctx->smax;
+                if (scaling > tsctx->smax) scaling = tsctx->smax;
+                if (scaling < 1. / tsctx->smax) scaling = 1. / tsctx->smax;
                 tsctx->tsize = tsctx->tsize * scaling;
                 if ((tsctx->tcurr < tsctx->tfinal - EPS) &&
-                    (tsctx->tcurr + tsctx->tsize >= tsctx->tfinal + EPS))
-                {
+                    (tsctx->tcurr + tsctx->tsize >= tsctx->tfinal + EPS)) {
                     tsctx->tsize = tsctx->tfinal - tsctx->tcurr;
                 }
             }
@@ -413,9 +471,7 @@ PetscErrorCode Update(void *ptr)
                                " current initial residual = %g with adpt "
                                "method, current time size = %g\n",
                                res, tsctx->tsize);
-        }
-        else
-        {
+        } else {
             ierr = PetscPrintf(
                 comm,
                 " current initial residual = %g, current time size = %g\n", res,
@@ -423,8 +479,7 @@ PetscErrorCode Update(void *ptr)
         }
 
         tsctx->tcurr += tsctx->tsize;
-        if (!param->PetscPreLoading)
-        {
+        if (!param->PetscPreLoading) {
             ierr = PetscPrintf(comm,
                                "\n====================== Step: %d, time: %f "
                                "====================\n",
@@ -441,8 +496,7 @@ PetscErrorCode Update(void *ptr)
         ierr = Updata_Reaction(user);
 
         ierr = CopyOldVector(user->sol, user->xold, user);
-        if (tsctx->tscurr % 100 == 0)
-        {
+        if (tsctx->tscurr % 10 == 0) {
             sprintf(filename, "example=%dpermeability_xxascii_%d.vts", EXAMPLE,
                     tsctx->tscurr);
             ierr = DataSaveVTK(user->sol, filename);
@@ -484,8 +538,7 @@ PetscErrorCode Update(void *ptr)
         ierr = PetscPrintf(comm, " number of unsuccessful steps = %d\n", fits);
         CHKERRQ(ierr);
 
-        if (!param->PetscPreLoading)
-        {
+        if (!param->PetscPreLoading) {
             ierr = PetscFPrintf(
                 comm, fp,
                 "%d\t, %d\t, %g\t, %d\t, %g\t, %d\t, %d\t, %d\t, %g\n", EXAMPLE,
@@ -498,8 +551,7 @@ PetscErrorCode Update(void *ptr)
 
         ierr = MPI_Barrier(comm);
         CHKERRQ(ierr);
-        if (tsctx->tcurr > tsctx->tfinal - EPS)
-        {
+        if (tsctx->tcurr > tsctx->tfinal - EPS) {
             tsctx->tscurr++;
             break;
         }
@@ -513,8 +565,7 @@ PetscErrorCode Update(void *ptr)
                        totaltime);
     CHKERRQ(ierr);
 
-    if (!param->PetscPreLoading)
-    {
+    if (!param->PetscPreLoading) {
         ierr = PetscFClose(comm, fp);
         CHKERRQ(ierr);
     }
@@ -522,17 +573,18 @@ PetscErrorCode Update(void *ptr)
     PetscFunctionReturn(0);
 }
 
-PetscErrorCode FormInitialValue_Perm_local(void *ptr)
-{
+PetscErrorCode FormInitialValue_Perm_local(void* ptr) {
     PetscErrorCode ierr;
-    UserCtx *user = (UserCtx *)ptr;
+    UserCtx* user = (UserCtx*)ptr;
     DM da = user->da, da_perm = user->da_perm;
-    PermField **perm_field_local;
-    PetscInt i, j, xg, yg, zg, nxg, nyg, nzg, mx, my;
+    PetscInt i, j, xg, yg, zg, nxg, nyg, nzg;
+    PetscInt xl, yl, zl, nxl, nyl, nzl;
     PetscFunctionBeginUser;
-    ierr = DMDAGetGhostCorners(da, &xg, &yg, &zg, &nxg, &nyg, &nzg);
-    CHKERRQ(ierr);
+    PetscCall(DMDAGetGhostCorners(da, &xg, &yg, &zg, &nxg, &nyg, &nzg));
+    PetscCall(DMDAGetCorners(da, &xl, &yl, &zl, &nxl, &nyl, &nzl));
 #if EXAMPLE == 3
+    PermField** perm_field_local;
+    PetscInt mx, my;
     mx = user->n1;
     my = user->n2;
     Vec perm_local, u_per;
@@ -541,7 +593,8 @@ PetscErrorCode FormInitialValue_Perm_local(void *ptr)
     CHKERRQ(ierr);
     ierr = DMCreateLocalVector(da_perm, &perm_local);
     CHKERRQ(ierr);
-    ierr = PetscViewerBinaryOpen(PETSC_COMM_WORLD, "SPE85.bin", FILE_MODE_READ, &dataviewer);
+    ierr = PetscViewerBinaryOpen(PETSC_COMM_WORLD, "SPE85.bin", FILE_MODE_READ,
+                                 &dataviewer);
     CHKERRQ(ierr);
     ierr = VecLoad(u_per, dataviewer);
     CHKERRQ(ierr);
@@ -556,97 +609,125 @@ PetscErrorCode FormInitialValue_Perm_local(void *ptr)
     ierr = DMDAVecGetArray(da_perm, perm_local, &perm_field_local);
     CHKERRQ(ierr);
 #endif
-    for (j = yg; j < yg + nyg; j++)
-    {
-        for (i = xg; i < xg + nxg; i++)
-        {
-
+    PermField **perm_field = NULL, **phi_field = NULL, **phi_old_field = NULL;
+    Vec perm_vec = NULL, phi_vec = NULL, phi_old_vec = NULL;
+    PetscCall(DMGetNamedGlobalVector(da_perm, "perm", &perm_vec));
+    PetscCall(DMGetNamedGlobalVector(da_perm, "phi", &phi_vec));
+    PetscCall(DMGetNamedGlobalVector(da_perm, "phi_old", &phi_old_vec));
+    PetscCall(DMDAVecGetArray(da_perm, perm_vec, &perm_field));
+    PetscCall(DMDAVecGetArray(da_perm, phi_vec, &phi_field));
+    PetscCall(DMDAVecGetArray(da_perm, phi_old_vec, &phi_old_field));
+    for (j = yl; j < yl + nyl; j++) {
+        for (i = xl; i < xl + nxl; i++) {
 #if EXAMPLE == 1
-            for (int nc = 0; nc < DOF_perm; nc++)
-            {
-                user->perm_field[j][i].xx[nc] = 1e-10;
-                user->phi_field[j][i].xx[nc] = 0.2;
-                user->phi_old_field[j][i].xx[nc] = 0.2;
+            for (int nc = 0; nc < DOF_perm; nc++) {
+                perm_field[j][i].xx[nc] = 1e-10;
+                phi_field[j][i].xx[nc] = 0.2;
+                phi_old_field[j][i].xx[nc] = 0.2;
             }
 #elif EXAMPLE == 2
-            for (int nc = 0; nc < DOF_perm; nc++)
-            {
-                user->perm_field[j][i].xx[nc] = 1;
-                user->phi_field[j][i].xx[nc] = 0.2;
-                user->phi_old_field[j][i].xx[nc] = 0.2;
+            for (int nc = 0; nc < DOF_perm; nc++) {
+                perm_field[j][i].xx[nc] = 1;
+                phi_field[j][i].xx[nc] = 0.2;
+                phi_old_field[j][i].xx[nc] = 0.2;
             }
 #elif EXAMPLE == 3
 
-            if (i < 0)
-            {
+            if (i < 0) {
                 perm_field_local[j][i].xx[0] = perm_field_local[j][0].xx[0];
             }
-            if (i > (mx - 1))
-            {
-                perm_field_local[j][i].xx[0] = perm_field_local[j][mx - 1].xx[0];
+            if (i > (mx - 1)) {
+                perm_field_local[j][i].xx[0] =
+                    perm_field_local[j][mx - 1].xx[0];
             }
-            if (j < 0)
-            {
+            if (j < 0) {
                 perm_field_local[j][i].xx[0] = perm_field_local[0][i].xx[0];
             }
-            if (j > (my - 1))
-            {
-                perm_field_local[j][i].xx[0] = perm_field_local[my - 1][i].xx[0];
+            if (j > (my - 1)) {
+                perm_field_local[j][i].xx[0] =
+                    perm_field_local[my - 1][i].xx[0];
             }
             perm_field_local[j][i].xx[1] = perm_field_local[j][i].xx[0];
-            for (int nc = 0; nc < DOF_perm; nc++)
-            {
-                user->perm_field[j][i].xx[nc] = 1e-10;//perm_field_local[j][i].xx[nc];
-                user->phi_field[j][i].xx[nc] = 0.2;
-                user->phi_old_field[j][i].xx[nc] = 0.2;
+            for (int nc = 0; nc < DOF_perm; nc++) {
+                perm_field[j][i].xx[nc] =
+                    1.e-10;  // perm_field_local[j][i].xx[nc];
+                phi_field[j][i].xx[nc] = 0.2;
+                phi_old_field[j][i].xx[nc] = 0.2;
             }
 
 #endif
         }
     }
 #if EXAMPLE == 3
-    ierr = DMDAVecRestoreArray(da_perm, perm_local, &perm_field_local);
-    CHKERRQ(ierr);
-    ierr = DMRestoreGlobalVector(da_perm, &u_per);
-    CHKERRQ(ierr);
-    ierr = DMRestoreLocalVector(da_perm, &perm_local);
-    CHKERRQ(ierr);
+    PetscCall(DMDAVecRestoreArray(da_perm, perm_local, &perm_field_local));
+    PetscCall(DMRestoreGlobalVector(da_perm, &u_per));
+    PetscCall(DMRestoreLocalVector(da_perm, &perm_local));
 #endif
+
+    PetscCall(DMDAVecRestoreArray(da_perm, perm_vec, &perm_field));
+    PetscCall(DMDAVecRestoreArray(da_perm, phi_vec, &phi_field));
+    PetscCall(DMDAVecRestoreArray(da_perm, phi_old_vec, &phi_old_field));
+
+    Vec perm_vec_local = NULL, phi_vec_local = NULL, phi_old_vec_local = NULL;
+    PetscCall(DMGetNamedLocalVector(da_perm, "perm", &perm_vec_local));
+    PetscCall(DMGetNamedLocalVector(da_perm, "phi", &phi_vec_local));
+    PetscCall(DMGetNamedLocalVector(da_perm, "phi_old", &phi_old_vec_local));
+
+    PetscCall(
+        DMGlobalToLocalBegin(da_perm, perm_vec, INSERT_VALUES, perm_vec_local));
+    PetscCall(
+        DMGlobalToLocalEnd(da_perm, perm_vec, INSERT_VALUES, perm_vec_local));
+    PetscCall(
+        DMGlobalToLocalBegin(da_perm, phi_vec, INSERT_VALUES, phi_vec_local));
+    PetscCall(
+        DMGlobalToLocalEnd(da_perm, phi_vec, INSERT_VALUES, phi_vec_local));
+    PetscCall(DMGlobalToLocalBegin(da_perm, phi_old_vec, INSERT_VALUES,
+                                   phi_old_vec_local));
+    PetscCall(DMGlobalToLocalEnd(da_perm, phi_old_vec, INSERT_VALUES,
+                                 phi_old_vec_local));
+
+    PetscCall(DMRestoreNamedLocalVector(da_perm, "perm", &perm_vec_local));
+    PetscCall(DMRestoreNamedLocalVector(da_perm, "phi", &phi_vec_local));
+    PetscCall(
+        DMRestoreNamedLocalVector(da_perm, "phi_old", &phi_old_vec_local));
+
+    PetscCall(DMRestoreNamedGlobalVector(da_perm, "perm", &perm_vec));
+    PetscCall(DMRestoreNamedGlobalVector(da_perm, "phi", &phi_vec));
+    PetscCall(DMRestoreNamedGlobalVector(da_perm, "phi_old", &phi_old_vec));
     PetscFunctionReturn(0);
 }
 
-PetscErrorCode FormInitialValue_local(void *ptr)
-{
+PetscErrorCode FormInitialValue_local(void* ptr) {
     PetscErrorCode ierr;
-    UserCtx *user = (UserCtx *)ptr;
+    UserCtx* user = (UserCtx*)ptr;
     DM da = user->da;
-    PhysicalField **sol;
+    PhysicalField** sol;
+    PhysicalField** xold_field;
+    Vec xold = NULL;
     PetscInt i, j, y_loc, x_loc, xl, yl, zl, nxl, nyl, nzl;
     PetscFunctionBeginUser;
     ierr = DMDAGetCorners(da, &xl, &yl, &zl, &nxl, &nyl, &nzl);
     CHKERRQ(ierr);
     ierr = DMDAVecGetArray(da, user->sol, &sol);
     CHKERRQ(ierr);
-    for (j = yl; j < yl + nyl; j++)
-    {
+    ierr = DMGetNamedGlobalVector(da, "xold", &xold);
+    CHKERRQ(ierr);
+    ierr = DMDAVecGetArray(da, xold, &xold_field);
+    CHKERRQ(ierr);
+    for (j = yl; j < yl + nyl; j++) {
         y_loc = ((PetscScalar)j + 0.5) * user->dy;
-        for (i = xl; i < xl + nxl; i++)
-        {
+        for (i = xl; i < xl + nxl; i++) {
             x_loc = ((PetscScalar)i + 0.5) * user->dx;
 #if EXAMPLE == 1 || EXAMPLE == 3
             sol[j][i].pw = P_init;
-            user->xold[j][i].pw = P_init;
-            for (int nc = 0; nc < DOF_reaction; ++nc)
-            {
-                if (y_loc <= L2 && (i == 0))
-                {
+            xold_field[j][i].pw = P_init;
+            for (int nc = 0; nc < DOF_reaction; ++nc) {
+                if (y_loc <= L2 && (i == 0)) {
                     sol[j][i].cw[nc] = c_BC_L;
-                    user->xold[j][i].cw[nc] = c_BC_L;
-                }
-                else
-                {
+                    xold_field[j][i].cw[nc] = c_BC_L;
+                } else {
                     sol[j][i].cw[nc] = c_BC_R;
-                    user->xold[j][i].cw[nc] = c_BC_R;
+                    xold_field[j][i].cw[nc] = c_BC_R;
                 }
             }
 
@@ -654,11 +735,10 @@ PetscErrorCode FormInitialValue_local(void *ptr)
             double c_init[DOF_reaction] = {0.0, 5.0e-2, 1.e-7, 1.0e-6};
             double c_init_1[DOF_reaction] = {1.0, 1.0e-6, 1.e-7, 1.0e-6};
             sol[j][i].pw = 60 - 50 * x_loc;
-            user->xold[j][i].pw = 60 - 50 * x_loc;
-            for (int nc = 0; nc < DOF_reaction; ++nc)
-            {
+            xold_field[j][i].pw = 60 - 50 * x_loc;
+            for (int nc = 0; nc < DOF_reaction; ++nc) {
                 sol[j][i].cw[nc] = c_init[nc];
-                user->xold[j][i].cw[nc] = c_init[nc];
+                xold_field[j][i].cw[nc] = c_init[nc];
             }
 
 #endif
@@ -666,54 +746,76 @@ PetscErrorCode FormInitialValue_local(void *ptr)
     }
     ierr = DMDAVecRestoreArray(da, user->sol, &sol);
     CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArray(da, xold, &xold_field);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedGlobalVector(da, "xold", &xold);
+    CHKERRQ(ierr);
     PetscFunctionReturn(0);
 }
 
-PetscErrorCode FormInitialValue_Reaction_local(void *ptr)
-{
+PetscErrorCode FormInitialValue_Reaction_local(void* ptr) {
     PetscErrorCode ierr;
-    UserCtx *user = (UserCtx *)ptr;
-    TstepCtx *tsctx = user->tsctx;
+    UserCtx* user = (UserCtx*)ptr;
     DM da = user->da;
 
 #if EXAMPLE == 1 || EXAMPLE == 3
     double eqm_data[DOF_Secondary] = {2.19e6, 4.73e-11, 0.222, 1e-2, 1e-3};
 #elif EXAMPLE == 2
-    double eqm_data[DOF_Secondary] = {6.341, -10.325, -7.009, -0.653, -12.85, -13.991};
+    double eqm_data[DOF_Secondary] = {6.341,  -10.325, -7.009,
+                                      -0.653, -12.85,  -13.991};
 #endif
-    PetscInt i, j, xg, yg, zg, nxg, nyg, nzg;
-    PetscInt xl, yl, zl, nxl, nyl, nzl;
+    PetscInt i, j, xl, yl, zl, nxl, nyl, nzl;
     PetscFunctionBeginUser;
-    ierr = DMDAGetGhostCorners(da, &xg, &yg, &zg, &nxg, &nyg, &nzg);
-    CHKERRQ(ierr);
+    Vec eqm_k = NULL, sec_conc_old = NULL;
+    Vec mass_frac_old = NULL, initial_ref = NULL;
+    Vec xold = NULL;
+#if EXAMPLE == 2
+    Vec eqm_k_mineral_local = NULL;
+#endif
     ierr = DMDAGetCorners(da, &xl, &yl, &zl, &nxl, &nyl, &nzl);
     CHKERRQ(ierr);
+    SecondaryReactionField **eqm_k_field = NULL, **sec_conc_old_field = NULL;
+    ReactionField **mass_frac_old_field = NULL, **initial_ref_field = NULL;
+
+    ierr = DMGetNamedGlobalVector(user->da_secondary, "eqm_k", &eqm_k);
+    CHKERRQ(ierr);
+    ierr = DMGetNamedGlobalVector(user->da_secondary, "sec_conc_old",
+                                  &sec_conc_old);
+    CHKERRQ(ierr);
+    ierr = DMGetNamedGlobalVector(user->da_reaction, "mass_frac_old",
+                                  &mass_frac_old);
+    CHKERRQ(ierr);
+    ierr =
+        DMGetNamedGlobalVector(user->da_reaction, "initial_ref", &initial_ref);
+    CHKERRQ(ierr);
+    ierr = DMDAVecGetArray(user->da_secondary, eqm_k, &eqm_k_field);
+    CHKERRQ(ierr);
+    ierr =
+        DMDAVecGetArray(user->da_secondary, sec_conc_old, &sec_conc_old_field);
+    CHKERRQ(ierr);
+    ierr =
+        DMDAVecGetArray(user->da_reaction, mass_frac_old, &mass_frac_old_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecGetArray(user->da_reaction, initial_ref, &initial_ref_field);
+    CHKERRQ(ierr);
 #if EXAMPLE == 2
-    Vec loc_X;
-    PhysicalField **sol;
-    ierr = DMGetLocalVector(da, &loc_X);
+    ierr = DMGetNamedLocalVector(user->da_mineral, "eqm_k_mineral",
+                                 &eqm_k_mineral_local);
     CHKERRQ(ierr);
-    ierr = DMGlobalToLocalBegin(da, user->sol, INSERT_VALUES, loc_X);
-    CHKERRQ(ierr);
-    ierr = DMGlobalToLocalEnd(da, user->sol, INSERT_VALUES, loc_X);
-    CHKERRQ(ierr);
-    ierr = DMDAVecGetArray(da, loc_X, &sol);
+    ierr = DMDAVecGetArray(user->da_mineral, eqm_k_mineral_local,
+                           &eqm_k_mineral_field);
     CHKERRQ(ierr);
 #endif
-    for (j = yg; j < yg + nyg; j++)
-    {
-        for (i = xg; i < xg + nxg; i++)
-        {
 
+    for (j = yl; j < yl + nyl; j++) {
+        for (i = xl; i < xl + nxl; i++) {
 #if EXAMPLE == 1 || EXAMPLE == 3
-            for (int nc = 0; nc < DOF_reaction; ++nc)
-            {
-                user->_mass_frac_old_field[j][i].reaction[nc] = 1.e-6;
+            for (int nc = 0; nc < DOF_reaction; ++nc) {
+                mass_frac_old_field[j][i].reaction[nc] = 1.e-6;
             }
-            for (int nc = 0; nc < DOF_Secondary; ++nc)
-            {
-                user->_sec_conc_old_field[j][i].reaction_secondary[nc] = 1.e-7;
-                user->eqm_k_field[j][i].reaction_secondary[nc] = eqm_data[nc];
+            for (int nc = 0; nc < DOF_Secondary; ++nc) {
+                sec_conc_old_field[j][i].reaction_secondary[nc] = 1.e-7;
+                eqm_k_field[j][i].reaction_secondary[nc] = eqm_data[nc];
             }
 
 #elif EXAMPLE == 2
@@ -722,31 +824,29 @@ PetscErrorCode FormInitialValue_Reaction_local(void *ptr)
             for (int nc = 0; nc < DOF_Secondary; ++nc)
 
             {
-                user->eqm_k_field[j][i].reaction_secondary[nc] = eqm_data[nc];
-                user->_sec_conc_old_field[j][i].reaction_secondary[nc] = 0.0;
+                eqm_k_field[j][i].reaction_secondary[nc] = eqm_data[nc];
+                sec_conc_old_field[j][i].reaction_secondary[nc] = 0.0;
             }
 
             for (int nc = 0; nc < DOF_mineral; ++nc)
 
             {
-                user->eqm_k_mineral_field[j][i].reaction_mineral[nc] = eqm_mineral_data[nc];
+                eqm_k_mineral_field[j][i].reaction_mineral[nc] =
+                    eqm_mineral_data[nc];
             }
 
 #endif
         }
     }
 #if EXAMPLE == 2
-    for (j = yl; j < yl + nyl; j++)
-    {
-        for (i = xl; i < xl + nxl; i++)
-        {
-            for (int nc = 0; nc < DOF_reaction; ++nc)
-            {
+    for (j = yl; j < yl + nyl; j++) {
+        for (i = xl; i < xl + nxl; i++) {
+            for (int nc = 0; nc < DOF_reaction; ++nc) {
                 SecondaryReactionField _sec_conc;
                 PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
-                    &_sec_conc, &user->eqm_k_field[j][i],
-                    &user->_mass_frac_old_field[j][i], &user->xold[j][i], _equilibrium_constants_as_log10,
-                    user, tsctx->tcurr);
+                    &_sec_conc, &eqm_k_field[j][i], &_mass_frac_old_field[j][i],
+                    &xold_field[j][i], _equilibrium_constants_as_log10, user,
+                    tsctx->tcurr);
                 //  user->_mass_frac_old_field[j][i].reaction[nc] = 0.0;
             }
         }
@@ -758,245 +858,188 @@ PetscErrorCode FormInitialValue_Reaction_local(void *ptr)
     ierr = DMRestoreLocalVector(da, &loc_X);
     CHKERRQ(ierr);
 #endif
+    ierr = DMDAVecRestoreArray(user->da_secondary, eqm_k, &eqm_k_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArray(user->da_secondary, sec_conc_old,
+                               &sec_conc_old_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArray(user->da_reaction, mass_frac_old,
+                               &mass_frac_old_field);
+    CHKERRQ(ierr);
+    ierr =
+        DMDAVecRestoreArray(user->da_reaction, initial_ref, &initial_ref_field);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedGlobalVector(user->da_secondary, "eqm_k", &eqm_k);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedGlobalVector(user->da_secondary, "sec_conc_old",
+                                      &sec_conc_old);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedGlobalVector(user->da_reaction, "mass_frac_old",
+                                      &mass_frac_old);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedGlobalVector(user->da_reaction, "initial_ref",
+                                      &initial_ref);
+    CHKERRQ(ierr);
     PetscFunctionReturn(0);
 }
 
 #undef __FUNCT__
 #define __FUNCT__ "Updata_Reaction"
-PetscErrorCode Updata_Reaction(void *ptr)
-{
+PetscErrorCode Updata_Reaction(void* ptr) {
     PetscErrorCode ierr;
-    UserCtx *user = (UserCtx *)ptr;
-    TstepCtx *tsctx = user->tsctx;
+    UserCtx* user = (UserCtx*)ptr;
+    TstepCtx* tsctx = user->tsctx;
     DM da = user->da;
-    PhysicalField **sol;
-    PetscInt i, j, nc, mx, my, xl, yl, zl, nxl, nyl, nzl, xg, yg, zg, nxg, nyg,
-        nzg;
-    Vec loc_X;
+    PhysicalField** sol;
+    PetscInt i, j, nc, xl, yl, zl, nxl, nyl, nzl;
     PetscFunctionBeginUser;
-    mx = user->n1;
-    my = user->n2;
-    ierr = DMGetLocalVector(da, &loc_X);
-    CHKERRQ(ierr);
-    ierr = DMGlobalToLocalBegin(da, user->sol, INSERT_VALUES, loc_X);
-    CHKERRQ(ierr);
-    ierr = DMGlobalToLocalEnd(da, user->sol, INSERT_VALUES, loc_X);
-    CHKERRQ(ierr);
-    ierr = DMDAGetGhostCorners(da, &xg, &yg, &zg, &nxg, &nyg, &nzg);
-    CHKERRQ(ierr);
     ierr = DMDAGetCorners(da, &xl, &yl, &zl, &nxl, &nyl, &nzl);
     CHKERRQ(ierr);
-    ierr = DMDAVecGetArray(da, loc_X, &sol);
+    Vec phi = NULL, phi_old = NULL;
+    Vec eqm_k = NULL, sec_conc_old = NULL;
+    Vec mass_frac_old = NULL, initial_ref = NULL;
+    PermField **phi_field = NULL, **phi_old_field = NULL;
+    SecondaryReactionField **eqm_k_field = NULL, **sec_conc_old_field = NULL;
+    ReactionField **mass_frac_old_field = NULL, **initial_ref_field = NULL;
+
+    ierr = DMGetNamedGlobalVector(user->da_perm, "phi", &phi);
     CHKERRQ(ierr);
-#if EXAMPLE == 1 || EXAMPLE == 3
-    if (xl == 0)
-    {
-        for (j = yg; j < yg + nyg; j++)
-        {
-            for (i = -WIDTH; i < 0; i++)
-            {
-                sol[j][i].pw = 2 * P_init - sol[j][-i - 1].pw;
-                for (nc = 0; nc < DOF_reaction; ++nc)
-                {
-                    sol[j][i].cw[nc] = 2 * c_BC_L - sol[j][-i - 1].cw[nc];
-                }
-            }
-        }
-    }
-    if (xl + nxl == mx)
-    {
-        for (j = yg; j < yg + nyg; j++)
-        {
-            for (i = mx; i < mx + WIDTH; i++)
-            {
-                sol[j][i].pw = -sol[j][2 * mx - i - 1].pw; //
-                for (nc = 0; nc < DOF_reaction; ++nc)
-                {
-                    sol[j][mx].cw[nc] =
-                        2 * c_BC_R - sol[j][2 * mx - i - 1].cw[nc]; //
-                }
-            }
-        }
-    }
-    if (yl == 0)
-    {
-        for (i = xg; i < xg + nxg; i++)
-        {
-            for (j = -WIDTH; j < 0; j++)
-            {
-                sol[j][i].pw = sol[-j - 1][i].pw; //
-                for (nc = 0; nc < DOF_reaction; ++nc)
-                {
-                    sol[j][i].cw[nc] = sol[-j - 1][i].cw[nc];
-                }
-            }
-        }
-    }
-    if (yl + nyl == my)
-    {
-        for (i = xg; i < xg + nxg; i++)
-        {
-            for (j = my; j < my + WIDTH; j++)
-            {
-                sol[j][i].pw = sol[2 * my - j - 1][i].pw;
-                for (nc = 0; nc < DOF_reaction; ++nc)
-                {
-                    sol[j][i].cw[nc] = sol[2 * my - j - 1][i].cw[nc];
-                }
-            }
-        }
-    }
-#elif EXAMPLE == 2
-    if (xl == 0)
-    {
-        for (j = yg; j < yg + nyg; j++)
-        {
-            for (i = -WIDTH; i < 0; i++)
-            {
+    ierr = DMGetNamedGlobalVector(user->da_perm, "phi_old", &phi_old);
+    CHKERRQ(ierr);
+    ierr = DMDAVecGetArray(user->da_perm, phi, &phi_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecGetArray(user->da_perm, phi_old, &phi_old_field);
+    CHKERRQ(ierr);
+    ierr = DMGetNamedGlobalVector(user->da_secondary, "eqm_k", &eqm_k);
+    CHKERRQ(ierr);
+    ierr = DMGetNamedGlobalVector(user->da_secondary, "sec_conc_old",
+                                  &sec_conc_old);
+    CHKERRQ(ierr);
+    ierr = DMDAVecGetArray(user->da_secondary, eqm_k, &eqm_k_field);
+    CHKERRQ(ierr);
+    ierr =
+        DMDAVecGetArray(user->da_secondary, sec_conc_old, &sec_conc_old_field);
+    CHKERRQ(ierr);
+    ierr = DMGetNamedGlobalVector(user->da_reaction, "mass_frac_old",
+                                  &mass_frac_old);
+    CHKERRQ(ierr);
+    ierr =
+        DMGetNamedGlobalVector(user->da_reaction, "initial_ref", &initial_ref);
+    CHKERRQ(ierr);
+    ierr =
+        DMDAVecGetArray(user->da_reaction, mass_frac_old, &mass_frac_old_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecGetArray(user->da_reaction, initial_ref, &initial_ref_field);
+    ierr = DMDAVecGetArray(da, user->sol, &sol);
+    CHKERRQ(ierr);
 
-                sol[j][i].pw = 2 * 60 - sol[j][-i - 1].pw;
-                sol[j][i].cw[0] = 2 * 1 - sol[j][-i - 1].cw[0];
-                if (tsctx->tcurr < T_final)
-                {
-
-                    sol[j][i].cw[1] = 2 * (5.e-2 + (1.e-6 - 5.e-2) * (sin(0.5 * 3.14 * tsctx->tcurr / T_final))) - sol[j][-i - 1].cw[1];
-                    sol[j][i].cw[3] = 2 * (1.e-6 + (5.e-2 - 1.e-6) * (sin(0.5 * 3.14 * tsctx->tcurr / T_final))) - sol[j][-i - 1].cw[3];
-                }
-                else
-                {
-                    sol[j][i].cw[1] = 2 * 1.e-6 - sol[j][-i - 1].cw[1];
-                    sol[j][i].cw[3] = 2 * 5.e-2 - sol[j][-i - 1].cw[3];
-                }
-                sol[j][i].cw[2] = 2 * 1.e-7 - sol[j][-i - 1].cw[2];
-            }
-        }
-    }
-
-    if (xl + nxl == mx)
-    {
-        for (j = yg; j < yg + nyg; j++)
-        {
-            for (i = mx; i < mx + WIDTH; i++)
-            {
-
-                sol[j][i].pw = 2 * 10 - sol[j][2 * mx - i - 1].pw;
-                sol[j][i].cw[0] = sol[j][2 * mx - i - 1].cw[0];
-                sol[j][i].cw[1] = sol[j][2 * mx - i - 1].cw[1];
-                sol[j][i].cw[2] = sol[j][2 * mx - i - 1].cw[2];
-                sol[j][i].cw[3] = sol[j][2 * mx - i - 1].cw[3];
-            }
-        }
-    }
-
-    if (yl == 0)
-    {
-        for (i = xg; i < xg + nxg; i++)
-        {
-            for (j = -WIDTH; j < 0; j++)
-            {
-
-                sol[j][i].pw = sol[-j - 1][i].pw;
-                sol[j][i].cw[0] = sol[-j - 1][i].cw[0];
-                sol[j][i].cw[1] = sol[-j - 1][i].cw[1];
-                sol[j][i].cw[2] = sol[-j - 1][i].cw[2];
-                sol[j][i].cw[3] = sol[-j - 1][i].cw[3];
-            }
-        }
-    }
-
-    if (yl + nyl == my)
-    {
-        for (i = xg; i < xg + nxg; i++)
-        {
-            for (j = my; j < my + WIDTH; j++)
-            {
-
-                sol[j][i].pw = sol[2 * my - j - 1][i].pw;
-                sol[j][i].cw[0] = sol[2 * my - j - 1][i].cw[0];
-                sol[j][i].cw[1] = sol[2 * my - j - 1][i].cw[1];
-                sol[j][i].cw[2] = sol[2 * my - j - 1][i].cw[2];
-                sol[j][i].cw[3] = sol[2 * my - j - 1][i].cw[3];
-            }
-        }
-    }
-#endif
-    for (j = yg; j < yg + nyg; j++)
-    {
-        for (i = xg; i < xg + nxg; i++)
-        {
+    for (j = yl; j < yl + nyl; j++) {
+        for (i = xl; i < xl + nxl; i++) {
 #if EXAMPLE == 1 || EXAMPLE == 3
             SecondaryReactionField _sec_conc;
             ReactionField _mass_frac, _reaction_rate, _mineral_sat;
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
-                &_sec_conc, &user->eqm_k_field[j][i],
-                &_mass_frac, &sol[j][i], _equilibrium_constants_as_log10,
-                user, tsctx->tcurr);
+                &_sec_conc, &eqm_k_field[j][i], &_mass_frac, &sol[j][i],
+                _equilibrium_constants_as_log10, user, tsctx->tcurr);
             PorousFlowAqueousPreDisChemistry_computeQpReactionRates(
                 reference_temperature_pre, reference_saturation,
-                user->phi_old_field[j][i].xx[0], &user->phi_field[j][i].xx[0], &_mineral_sat,
-                &_reaction_rate, &user->_sec_conc_old_field[j][i], &_sec_conc,
-                _equilibrium_constants_as_log10, user, &user->initial_ref_field[j][i]);
+                phi_old_field[j][i].xx[0], &phi_field[j][i].xx[0],
+                &_mineral_sat, &_reaction_rate, &sec_conc_old_field[j][i],
+                &_sec_conc, _equilibrium_constants_as_log10, user,
+                &initial_ref_field[j][i]);
             PorousFlowAqueousPreDisMineral_computeQpProperties(
-                reference_saturation, &user->_sec_conc_old_field[j][i], &_sec_conc,
-                &_reaction_rate, user->phi_old_field[j][i].xx[0], user);
-            user->_sec_conc_old_field[j][i] = _sec_conc;
-            user->_mass_frac_old_field[j][i] = _mass_frac;
+                reference_saturation, &sec_conc_old_field[j][i], &_sec_conc,
+                &_reaction_rate, phi_old_field[j][i].xx[0], user);
+            sec_conc_old_field[j][i] = _sec_conc;
+            mass_frac_old_field[j][i] = _mass_frac;
 #elif EXAMPLE == 2
             SecondaryReactionField _sec_conc;
             ReactionField _mass_frac;
             PorousFlowMassFractionAqueousEquilibriumChemistry_computeQpProperties(
-                &_sec_conc, &user->eqm_k_field[j][i],
-                &_mass_frac, &sol[j][i], _equilibrium_constants_as_log10,
-                user, tsctx->tcurr);
+                &_sec_conc, &user->eqm_k_field[j][i], &_mass_frac, &sol[j][i],
+                _equilibrium_constants_as_log10, user, tsctx->tcurr);
             user->_sec_conc_old_field[j][i] = _sec_conc;
             user->_mass_frac_old_field[j][i] = _mass_frac;
 #endif
         }
     }
 
-    ierr = DMDAVecRestoreArray(da, loc_X, &sol);
+    ierr = DMDAVecRestoreArray(user->da_perm, phi, &phi_field);
     CHKERRQ(ierr);
-    ierr = DMRestoreLocalVector(da, &loc_X);
+    ierr = DMDAVecRestoreArray(user->da_perm, phi_old, &phi_old_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArray(user->da_secondary, eqm_k, &eqm_k_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArray(user->da_secondary, sec_conc_old,
+                               &sec_conc_old_field);
+    CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArray(user->da_reaction, mass_frac_old,
+                               &mass_frac_old_field);
+    CHKERRQ(ierr);
+    ierr =
+        DMDAVecRestoreArray(user->da_reaction, initial_ref, &initial_ref_field);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedGlobalVector(user->da_perm, "phi", &phi);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedGlobalVector(user->da_perm, "phi_old", &phi_old);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedGlobalVector(user->da_secondary, "eqm_k", &eqm_k);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedGlobalVector(user->da_secondary, "sec_conc_old",
+                                      &sec_conc_old);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedGlobalVector(user->da_reaction, "mass_frac_old",
+                                      &mass_frac_old);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedGlobalVector(user->da_reaction, "initial_ref",
+                                      &initial_ref);
+    CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArray(da, user->sol, &sol);
     CHKERRQ(ierr);
     PetscFunctionReturn(0);
 }
 
-PetscErrorCode CopyOldVector(Vec sol, PhysicalField **xold, void *ptr)
-{
+PetscErrorCode CopyOldVector(Vec sol, PhysicalField** xold, void* ptr) {
     PetscErrorCode ierr;
-    UserCtx *user = (UserCtx *)ptr;
+    UserCtx* user = (UserCtx*)ptr;
     DM da = user->da;
-    PhysicalField **sol_local;
+    Vec xold_vec = NULL;
+    PhysicalField** sol_local;
+    PhysicalField** xold_global;
     PetscInt i, j, xl, yl, zl, nxl, nyl, nzl;
     PetscFunctionBeginUser;
     ierr = DMDAGetCorners(da, &xl, &yl, &zl, &nxl, &nyl, &nzl);
     CHKERRQ(ierr);
     ierr = DMDAVecGetArray(da, sol, &sol_local);
     CHKERRQ(ierr);
-    for (j = yl; j < yl + nyl; j++)
-    {
-        for (i = xl; i < xl + nxl; i++)
-        {
-            user->xold[j][i].pw = sol_local[j][i].pw;
-            for (int nc = 0; nc < DOF_reaction; ++nc)
-            {
-                user->xold[j][i].cw[nc] = sol_local[j][i].cw[nc];
+    ierr = DMGetNamedGlobalVector(da, "xold", &xold_vec);
+    CHKERRQ(ierr);
+    ierr = DMDAVecGetArray(da, xold_vec, &xold_global);
+    CHKERRQ(ierr);
+    for (j = yl; j < yl + nyl; j++) {
+        for (i = xl; i < xl + nxl; i++) {
+            xold_global[j][i].pw = sol_local[j][i].pw;
+            for (int nc = 0; nc < DOF_reaction; ++nc) {
+                xold_global[j][i].cw[nc] = sol_local[j][i].cw[nc];
             }
         }
     }
     ierr = DMDAVecRestoreArray(da, sol, &sol_local);
     CHKERRQ(ierr);
+    ierr = DMDAVecRestoreArray(da, xold_vec, &xold_global);
+    CHKERRQ(ierr);
+    ierr = DMRestoreNamedGlobalVector(da, "xold", &xold_vec);
+    CHKERRQ(ierr);
     PetscFunctionReturn(0);
 }
 #if EXAMPLE == 2
-PetscErrorCode KineticDisPreConcAux(Vec _vals, Vec _mineral_old, Vec _mineral, double _dt, void *ptr)
-{
-
+PetscErrorCode KineticDisPreConcAux(Vec _vals, Vec _mineral_old, Vec _mineral,
+                                    double _dt, void* ptr) {
     PetscErrorCode ierr;
-    UserCtx *user = (UserCtx *)ptr;
+    UserCtx* user = (UserCtx*)ptr;
     DM da = user->da, da_mineral = user->da_mineral;
     MineralField **mineral_species, **mineral_species_old;
-    PhysicalField **sol;
+    PhysicalField** sol;
     PetscInt i, j, xl, yl, zl, nxl, nyl, nzl;
     PetscFunctionBeginUser;
     ierr = DMDAGetCorners(da, &xl, &yl, &zl, &nxl, &nyl, &nzl);
@@ -1007,17 +1050,16 @@ PetscErrorCode KineticDisPreConcAux(Vec _vals, Vec _mineral_old, Vec _mineral, d
     CHKERRQ(ierr);
     ierr = DMDAVecGetArray(da, _vals, &sol);
     CHKERRQ(ierr);
-    for (j = yl; j < yl + nyl; j++)
-    {
-        for (i = xl; i < xl + nxl; i++)
-        {
-
-            for (int q = 0; q < DOF_mineral; ++q)
-            {
+    for (j = yl; j < yl + nyl; j++) {
+        for (i = xl; i < xl + nxl; i++) {
+            for (int q = 0; q < DOF_mineral; ++q) {
                 MineralField kinetic_rate;
-                KineticDisPreRateAux_All(&sol[j][i], &user->eqm_k_mineral_field[j][i],
+                KineticDisPreRateAux_All(&sol[j][i],
+                                         &user->eqm_k_mineral_field[j][i],
                                          &kinetic_rate);
-                mineral_species[j][i].reaction_mineral[q] = mineral_species_old[j][i].reaction_mineral[q] + kinetic_rate.reaction_mineral[q] * _dt;
+                mineral_species[j][i].reaction_mineral[q] =
+                    mineral_species_old[j][i].reaction_mineral[q] +
+                    kinetic_rate.reaction_mineral[q] * _dt;
                 if (mineral_species[j][i].reaction_mineral[q] < 0.0)
                     mineral_species[j][i].reaction_mineral[q] = 0.0;
             };

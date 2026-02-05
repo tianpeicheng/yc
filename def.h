@@ -224,9 +224,9 @@ typedef struct
     Vec myF, sol, sol_mineral, sol_mineral_old;
     DM da, da_reaction, da_perm, da_secondary, da_mineral;
     SNES snes;
-    PermField **phi_field, **perm_field, **phi_old_field;
-    ReactionField **initial_ref_field, **_mass_frac_old_field;
-    SecondaryReactionField **eqm_k_field, **_sec_conc_old_field;
+    // PermField **phi_field, **perm_field, **phi_old_field;
+    // ReactionField **initial_ref_field, **_mass_frac_old_field;
+    // SecondaryReactionField **eqm_k_field, **_sec_conc_old_field;
 #if EXAMPLE==2
     MineralField **eqm_k_mineral_field;
 #endif
