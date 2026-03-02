@@ -1,2 +1,2 @@
 # yc
-yc trash code
+yc track code
