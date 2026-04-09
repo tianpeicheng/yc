@@ -496,7 +496,7 @@ PetscErrorCode Update(void* ptr) {
         ierr = Updata_Reaction(user);
 
         ierr = CopyOldVector(user->sol, user->xold, user);
-        if (tsctx->tscurr % 10 == 0) {
+        if (tsctx->tscurr % 1000 == 0) {
             sprintf(filename, "example=%dpermeability_xxascii_%d.vts", EXAMPLE,
                     tsctx->tscurr);
             ierr = DataSaveVTK(user->sol, filename);
@@ -537,6 +537,7 @@ PetscErrorCode Update(void* ptr) {
         CHKERRQ(ierr);
         ierr = PetscPrintf(comm, " number of unsuccessful steps = %d\n", fits);
         CHKERRQ(ierr);
+        Vec perm_vec = NULL;
 
         if (!param->PetscPreLoading) {
             ierr = PetscFPrintf(
@@ -580,6 +581,7 @@ PetscErrorCode FormInitialValue_Perm_local(void* ptr) {
     PetscInt i, j, xg, yg, zg, nxg, nyg, nzg;
     PetscInt xl, yl, zl, nxl, nyl, nzl;
     PetscFunctionBeginUser;
+
     PetscCall(DMDAGetGhostCorners(da, &xg, &yg, &zg, &nxg, &nyg, &nzg));
     PetscCall(DMDAGetCorners(da, &xl, &yl, &zl, &nxl, &nyl, &nzl));
 #if EXAMPLE == 3
@@ -587,11 +589,9 @@ PetscErrorCode FormInitialValue_Perm_local(void* ptr) {
     PetscInt mx, my;
     mx = user->n1;
     my = user->n2;
-    Vec perm_local, u_per;
+    Vec  u_per;
     PetscViewer dataviewer;
     ierr = DMCreateGlobalVector(da_perm, &u_per);
-    CHKERRQ(ierr);
-    ierr = DMCreateLocalVector(da_perm, &perm_local);
     CHKERRQ(ierr);
     ierr = PetscViewerBinaryOpen(PETSC_COMM_WORLD, "SPE85.bin", FILE_MODE_READ,
                                  &dataviewer);
@@ -602,11 +602,7 @@ PetscErrorCode FormInitialValue_Perm_local(void* ptr) {
     CHKERRQ(ierr);
     ierr = PetscViewerDestroy(&dataviewer);
     CHKERRQ(ierr);
-    ierr = DMGlobalToLocalBegin(da_perm, u_per, INSERT_VALUES, perm_local);
-    CHKERRQ(ierr);
-    ierr = DMGlobalToLocalEnd(da_perm, u_per, INSERT_VALUES, perm_local);
-    CHKERRQ(ierr);
-    ierr = DMDAVecGetArray(da_perm, perm_local, &perm_field_local);
+    ierr = DMDAVecGetArray(da_perm, u_per, &perm_field_local);
     CHKERRQ(ierr);
 #endif
     PermField **perm_field = NULL, **phi_field = NULL, **phi_old_field = NULL;
@@ -642,9 +638,8 @@ PetscErrorCode FormInitialValue_Perm_local(void* ptr) {
         }
     }
 #if EXAMPLE == 3
-    PetscCall(DMDAVecRestoreArray(da_perm, perm_local, &perm_field_local));
+    PetscCall(DMDAVecRestoreArray(da_perm, u_per, &perm_field_local));
     PetscCall(DMRestoreGlobalVector(da_perm, &u_per));
-    PetscCall(DMRestoreLocalVector(da_perm, &perm_local));
 #endif
 
     PetscCall(DMDAVecRestoreArray(da_perm, perm_vec, &perm_field));

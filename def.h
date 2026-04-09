@@ -64,6 +64,7 @@
 #define P_BC_L (2 * 100 * 1e6)
 #define c_BC_L (5e-2)
 #define c_BC_R (1.e-6)
+#define P_Left (1.e+6)
 #define P_init (1.e+6)    // psi
 #define rho_init (1000.0) // 56 lb/cu-ft =897.033948kg/m^3
 #define phi_init (0.1)
@@ -95,8 +96,8 @@
 #define N2 100
 #define TSIZE 0.01
 #elif EXAMPLE==3
-#define L1 (2.20*UNIT_L)
-#define L2 (1.20*UNIT_L)
+#define L1 (220*UNIT_L)
+#define L2 (120*UNIT_L)
 #define _bulk_modulus (2.0e9)
 #define _thermal_expansion (2.14e-4)
 #define reference_temperature (298.15)
@@ -104,13 +105,14 @@
 #define reference_saturation (1)
 #define temp_ref (298.15)
 #define biot (1.0)
+#define P_Left (1.e+7)
 #define _gas_const (8.314)
 #define _one_over_ref_temp (1 / 298.15)
 #define kinetic_rate_constant (3e-4)
 #define reference_chemistry (0.1)
 #define c_BC_L (5e-2)
 #define c_BC_R (1.e-6)
-#define P_init (1.e+6)   
+#define P_init (1.e+5)   
 #define rho_init (1000.0) 
 #define c_init (0.0)
 #define mu (1e-3)

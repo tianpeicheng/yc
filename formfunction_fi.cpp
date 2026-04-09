@@ -159,9 +159,12 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
     ierr = DMDAVecGetArrayRead(dm, xold, &xold_field);
     CHKERRQ(ierr);
 
-#if EXAMPLE == 1||EXAMPLE==3
+#if EXAMPLE == 1
 #define conc_1(i, j) (1)
 #define diffusivity(i, j) (0)
+#elif EXAMPLE==3
+#define conc_1(i, j) (1)
+#define diffusivity(i, j) (1.e-4)
 #elif EXAMPLE == 2
 #define conc_1(i, j) (2.e-4)
 #define diffusivity(i, j) (1.e-7)
@@ -188,7 +191,7 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
             if (i == 0)
             {
 #if EXAMPLE == 1||EXAMPLE==3
-                x_left.pw = 2 * P_init - x_center.pw;
+                x_left.pw = 2 * P_Left - x_center.pw;
                 for (nc = 0; nc < DOF_reaction; ++nc)
                 {
                     x_left.cw[nc] = 2 * c_BC_L - x_center.cw[nc];
@@ -216,8 +219,15 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
             }
             if (i == mx - 1)
             {
-#if EXAMPLE == 1||EXAMPLE==3
+#if EXAMPLE == 1
                 x_right.pw = -x_center.pw;
+                for (nc = 0; nc < DOF_reaction; ++nc)
+                {
+                    x_right.cw[nc] = 2 * c_BC_R - x_center.cw[nc];
+                }
+
+#elif EXAMPLE==3
+                x_right.pw = 2*P_init-x_center.pw;
                 for (nc = 0; nc < DOF_reaction; ++nc)
                 {
                     x_right.cw[nc] = 2 * c_BC_R - x_center.cw[nc];
@@ -323,19 +333,19 @@ PetscErrorCode FormFunctionLocal(DMDALocalInfo *info, PhysicalField **x, Physica
                 fluxL1 = _mass_frac_left.reaction[nc] * rho(i - 1, j) *
                              max(U_L, 0.0) +
                          _mass_frac.reaction[nc] * rho(i, j) * min(U_L, 0.0);
-                fluxL2 = diffusivity(i, j) * (_mass_frac.reaction[nc] - _mass_frac_left.reaction[nc]) / dx;
+                fluxL2 = rho(i, j) * diffusivity(i, j) * (_mass_frac.reaction[nc] - _mass_frac_left.reaction[nc]) / dx;
                 fluxR1 = _mass_frac_right.reaction[nc] * rho(i + 1, j) *
                              min(U_R, 0.0) +
                          _mass_frac.reaction[nc] * rho(i, j) * max(U_R, 0.0);
-                fluxR2 = diffusivity(i, j) * (_mass_frac_right.reaction[nc] - _mass_frac.reaction[nc]) / dx;
+                fluxR2 = rho(i, j) * diffusivity(i, j) * (_mass_frac_right.reaction[nc] - _mass_frac.reaction[nc]) / dx;
                 fluxB1 = _mass_frac_bottom.reaction[nc] * rho(i, j - 1) *
                              max(U_B, 0.0) +
                          _mass_frac.reaction[nc] * rho(i, j) * min(U_B, 0.0);
-                fluxB2 = diffusivity(i, j) * (_mass_frac.reaction[nc] - _mass_frac_bottom.reaction[nc]) / dy;
+                fluxB2 = rho(i, j) * diffusivity(i, j) * (_mass_frac.reaction[nc] - _mass_frac_bottom.reaction[nc]) / dy;
                 fluxT1 = _mass_frac_top.reaction[nc] * rho(i, j + 1) *
                              min(U_T, 0.0) +
                          _mass_frac.reaction[nc] * rho(i, j) * max(U_T, 0.0);
-                fluxT2 = diffusivity(i, j) * (_mass_frac_top.reaction[nc] - _mass_frac.reaction[nc]) / dy;
+                fluxT2 = rho(i, j) * diffusivity(i, j) * (_mass_frac_top.reaction[nc] - _mass_frac.reaction[nc]) / dy;
                 alpha[nc] =
                     (rho(i, j) * phi_field[j][i].xx[0] * _mass_frac.reaction[nc] -
                      RHO_OLD(i, j)  * phi_old_field[j][i].xx[0] *
