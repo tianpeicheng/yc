@@ -22,9 +22,12 @@ static PetscErrorCode ScatterNamedToSubDMLocal(DM dm, DM subdm,
                                                   &gscat));
     PetscCall(VecScatterBegin(*gscat, g, l, INSERT_VALUES, SCATTER_FORWARD));
     PetscCall(VecScatterEnd(*gscat, g, l, INSERT_VALUES, SCATTER_FORWARD));
-    // PetscCall(VecScatterDestroy(iscat));
-    // PetscCall(VecScatterDestroy(oscat));
-    // PetscCall(VecScatterDestroy(gscat));
+    PetscCall(VecScatterDestroy(iscat));
+    PetscCall(VecScatterDestroy(oscat));
+    PetscCall(VecScatterDestroy(gscat));
+    PetscCall(PetscFree(iscat));
+    PetscCall(PetscFree(oscat));
+    PetscCall(PetscFree(gscat));
     PetscCall(DMRestoreNamedGlobalVector(dm, name, &g));
     PetscCall(DMRestoreNamedLocalVector(subdm, name, &l));
     PetscFunctionReturn(0);
@@ -41,9 +44,12 @@ static PetscErrorCode ScatterNamedToSubDMGlobal(DM dm, DM subdm,
                                                   &gscat));
     PetscCall(VecScatterBegin(*oscat, g, l, INSERT_VALUES, SCATTER_FORWARD));
     PetscCall(VecScatterEnd(*oscat, g, l, INSERT_VALUES, SCATTER_FORWARD));
-    // PetscCall(VecScatterDestroy(iscat));
-    // PetscCall(VecScatterDestroy(oscat));
-    // PetscCall(VecScatterDestroy(gscat));
+    PetscCall(VecScatterDestroy(iscat));
+    PetscCall(VecScatterDestroy(oscat));
+    PetscCall(VecScatterDestroy(gscat));
+    PetscCall(PetscFree(iscat));
+    PetscCall(PetscFree(oscat));
+    PetscCall(PetscFree(gscat));
     PetscCall(DMRestoreNamedGlobalVector(dm, name, &g));
     PetscCall(DMRestoreNamedGlobalVector(subdm, name, &l));
     PetscFunctionReturn(0);
@@ -496,11 +502,11 @@ PetscErrorCode Update(void* ptr) {
         ierr = Updata_Reaction(user);
 
         ierr = CopyOldVector(user->sol, user->xold, user);
-        if (tsctx->tscurr % 1000 == 0) {
-            sprintf(filename, "example=%dpermeability_xxascii_%d.vts", EXAMPLE,
+        if (tsctx->tscurr % 100 == 0) {
+            sprintf(filename, "aspinexample=%dpermeability_xxascii_%d.vts", EXAMPLE,
                     tsctx->tscurr);
             ierr = DataSaveVTK(user->sol, filename);
-            sprintf(filename, "example=%dpermeability_xxascii_%d.data", EXAMPLE,
+            sprintf(filename, "aspinexample=%dpermeability_xxascii_%d.data", EXAMPLE,
                     tsctx->tscurr);
             ierr = DataSaveASCII(user->sol, filename);
             CHKERRQ(ierr);
@@ -923,13 +929,12 @@ PetscErrorCode Updata_Reaction(void* ptr) {
                 reference_temperature_pre, reference_saturation,
                 phi_old_field[j][i].xx[0], &phi_field[j][i].xx[0],
                 &_mineral_sat, &_reaction_rate, &sec_conc_old_field[j][i],
-                &_sec_conc, _equilibrium_constants_as_log10, user,
+                 _equilibrium_constants_as_log10, user,
                 &initial_ref_field[j][i]);
             PorousFlowAqueousPreDisMineral_computeQpProperties(
                 reference_saturation, &sec_conc_old_field[j][i], &_sec_conc,
                 &_reaction_rate, phi_old_field[j][i].xx[0], user);
-            sec_conc_old_field[j][i] = _sec_conc;
-            mass_frac_old_field[j][i] = _mass_frac;
+                sec_conc_old_field[j][i] = _sec_conc;
 #elif EXAMPLE == 2
             SecondaryReactionField _sec_conc;
             ReactionField _mass_frac;

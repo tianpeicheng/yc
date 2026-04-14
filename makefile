@@ -32,10 +32,9 @@ clear:
 	-${RM} ${OBJS} ${BIN_DIR}/main
 runss:
 	-@${MPIEXEC} mpirun -np 16 ./fi -preload 0 -n1 220 -n2 60 -p 0 user_aspin 0 \
-	 -tsize 0.01 -tfinal 3153600000 -tsmax 10000 -tsstart 0  \
+	 -tsize 0.001 -tfinal 1 -tsmax 10000000000000 -tsstart 0  \
 	 -snes_converged_reason -snes_max_it 100  \
-	 -snes_type newtonls -snes_linesearch_type bt -snes_linesearch_minlambda 1.e-12 -snes_linesearch_maxlambda 1 -snes_linesearch_max_it 100 \
-	 -snes_linesearch_alpha 1.e-4 -snes_linesearch_order 1 -snes_linesearch_damping 1.0  \
+	 -snes_type newtonls -snes_linesearch_type bt \
 	 -snes_atol 1.e-10 -snes_rtol 1.e-4 -snes_stol 1.e-1000  -ksp_type gmres -ksp_atol 1.e-10 -ksp_rtol 1.e-5  \
 	 -ksp_gmres_restart 30 -ksp_pc_side right -pc_type asm  -pc_asm_type restrict -pc_asm_overlap 1  \
 	 -sub_ksp_type preonly -sub_pc_type lu -snes_monitor  \
@@ -56,12 +55,12 @@ runold:
 
 
 runss_1:
-	mpirun -np 4 ./fi -preload 0 -n1 100 -n2 10 -p 0 -da_overlap 2 \
+	mpirun -np 4 ./fi -preload 0 -n1 100 -n2 10 -p 0 -da_overlap 0 \
 	 -tsize 0.01 -tfinal 1 -tsmax 10000 -tsstart 0  \
 	 -snes_converged_reason -snes_atol 1.e-10 -snes_rtol 1.e-4 -snes_stol 1.e-100 \
 	 -snes_type aspin -npc_snes_type nasm -npc_sub_snes_type newtonls -npc_sub_snes_atol 1.e-10 -npc_sub_snes_rtol 1.e-6 -npc_sub_snes_stol 1.e-100  \
 	 -npc_sub_snes_stol 1.e-10 -snes_linesearch_type basic -npc_sub_snes_linesearch_type bt  -snes_monitor_short  \
-	 -npc_sub_ksp_type  gmres -npc_sub_pc_type lu  \
+	 -npc_sub_ksp_type  gmres -npc_sub_pc_type lu  -npc_sub_snes_monitor \
 
 # 
 
@@ -77,11 +76,12 @@ runss_2:
 
 
 runss_3:
-	mpirun -np 16 ./fi -preload 0 -n1 220 -n2 60 -p 0  -da_overlap 1 \
-	 -tsize 0.01 -tfinal 1 -tsmax 10000 -tsstart 0   \
-	 -ksp_type gmres -ksp_atol 1.e-6 -ksp_rtol 1.e-3  \
-	 -snes_converged_reason -snes_atol 1.e-10 -snes_rtol 1.e-6 -snes_stol 1.e-100 \
-	 -snes_type aspin -npc_snes_type nasm -npc_sub_snes_type newtonls -npc_sub_snes_atol 1.e-3 -npc_sub_snes_rtol 1.e-3 -npc_sub_snes_stol 1.e-100  \
-	-snes_linesearch_type bt -snes_linesearch_minlambda 1.e-12 -snes_linesearch_maxlambda 1 -npc_sub_snes_linesearch_type bt -snes_monitor_short  \
-	 -npc_sub_ksp_type preonly -npc_sub_pc_type lu -mat_mffd_err 1e-8 \
+	mpirun -np 4 ./fi -preload 0 -n1 220 -n2 60 -p 0  -da_overlap 1 \
+	-tsize 1 -tfinal 86400000 -tsmax 10000000000000 -tsstart 0   \
+	-ksp_type gmres -ksp_atol 1.e-6 -ksp_rtol 1.e-3  \
+	-snes_converged_reason -snes_atol 1.e-10 -snes_rtol 1.e-6 -snes_stol 1.e-100 \
+	-snes_type aspin -npc_snes_type nasm -npc_snes_nasm_type restrict -npc_sub_snes_type newtonls \
+	-npc_sub_snes_atol 1.e-5 -npc_sub_snes_rtol 1.e-4 -npc_sub_snes_stol 1.e-100  \
+	-snes_linesearch_type basic -npc_sub_snes_linesearch_type bt -npc_sub_snes_max_it 50 -snes_monitor_short  \
+	-npc_sub_ksp_type preonly -npc_sub_pc_type lu  -npc_sub_snes_monitor \
 
